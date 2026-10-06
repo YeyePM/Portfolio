@@ -4266,13 +4266,12 @@ function actionOptions(c){
   opts.push({k:'hold', t:'挂起待重试', ok:true});
   return opts;
 }
-/* 默认选中的动作 = 系统建议的动作。
-   原来写死 'adopt'，于是 REVIEW 案件底栏大字写「转人工复核 / 下发补证」、
-   选中项却是「采纳 skill 结论」——同一行里两个说法。 */
+/* 进案子不预选任何动作：底栏按钮一律是「未点击」态，等审核员自己点。
+   系统给的是建议——底栏第一行那句带竖条的「系统建议」，不是替他按下去的手指。
+   预选还有个副作用：带表单的动作（补证/改判/挂起）一进案子就自动弹面板，
+   看着像页面自己做了决定。 */
 function defaultAct(c){
-  const opts = actionOptions(c);
-  const k = suggestAction(c).k;
-  return opts.some(function(o){ return o.k === k; }) ? k : opts[0].k;
+  return '';
 }
 /* 该动作是否需要展开面板填表（无表单的动作不展开，× 的语义才永远成立） */
 const FORM_ACTS = {override:1, evidence:1, hold:1};
@@ -4402,7 +4401,7 @@ function actTone(c, k){
 
 function renderDecBar(c){
   const opts = actionOptions(c);
-  const chosen = state.act || opts[0].k;
+  const chosen = state.act;
   const locked = state.decided[c.id];
   const o = c.output, a = alignment(c), sug = suggestAction(c);
 
@@ -4450,12 +4449,13 @@ function evCountHTML(c){
 }
 
 function renderDecPanel(c){
-  const chosen = state.act || actionOptions(c)[0].k;
+  const chosen = state.act;
   /* 面板只放「需要人工填写」的表单。无表单的动作（采纳/等待重跑/线下核验）不展开面板，
      所以 × 与 Esc 的语义永远成立：收起 = 回到不填表的状态。
      展开与否由 panelOpen 决定，而 panelOpen 只在「用户点了某个动作」时置真——
      否则像 REVIEW 这种默认动作自带表单的档位，一进案子面板就自动弹出、点 × 又被渲染回来，
-     又变成「叉叉关不掉」。 */
+     又变成「叉叉关不掉」。
+     动作未选时 chosen 为空串，这里落空、面板内容为空 → 面板不展开、也无按钮高亮。 */
   let inner = '';
   if (chosen === 'override'){
     /* 档位不预选：改判到哪一档，就是这次人工裁决本身。预选一个 WARN 等于替审核员把结论写好了，
@@ -5797,6 +5797,8 @@ function buildCommit(){
 /* 改判 / 补证 / 挂起 必须填写备注依据，防盲批 */
 function validateCommit(){
   const act = state.act;
+  /* 动作不再预选：一个都没点就来提交，先拦住——否则确认层会拿空动作拼出一句空标题 */
+  if (!act) return '请先在底栏选择一个处理动作，再提交裁决。';
   if (act === 'adopt' || act === 'retry' || act === 'offline') return '';
   if (act === 'evidence'){
     /* 补证的依据现在是「勾了哪些项」，不再强制填字——但一项都没勾就不许提交 */
