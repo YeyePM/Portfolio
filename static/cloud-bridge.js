@@ -33,22 +33,27 @@
     publishableKey: 'wbpk_061NsT1nQ894uQUnF32t3E_Gl82oLslH1VRVEjZ6vpEKe3OdrnuqFbn'
   };
 
-  /* 本文件自己的 URL —— 用来把 SDK 副本定位到「与本文件同级的 vendor/」。
+  /* 本文件自己的 <script> 标签 —— 用来把 SDK 副本定位到「与本文件同级的 vendor/」。
      这样同一份 cloud-bridge.js 既能跑在 FastAPI 的 /static/ 下，也能直接扔在
      GitHub Pages 的 <repo>/static/ 下，不必为不同站点维护两版。
-     ⚠️ 必须在同步执行期取（currentScript 只在初始求值时可靠），所以放在最外层。 */
-  function selfScriptUrl() {
+     ⚠️ 必须在同步执行期取（currentScript 只在初始求值时可靠），所以放在最外层。
+
+     顺带支持一个通用开关：给本标签加 data-no-visit="1" 的页面不写访问记录
+     （数据看板这类自用页，自己刷新不该污染访客数据）。 */
+  function findSelfTag() {
     try {
       var cur = global.document.currentScript;
-      if (cur && cur.src) return cur.src;
+      if (cur && cur.src && /cloud-bridge\.js(\?|#|$)/.test(cur.src)) return cur;
       var tags = global.document.getElementsByTagName('script');
       for (var i = tags.length - 1; i >= 0; i--) {
-        if (tags[i].src && /cloud-bridge\.js(\?|#|$)/.test(tags[i].src)) return tags[i].src;
+        if (tags[i].src && /cloud-bridge\.js(\?|#|$)/.test(tags[i].src)) return tags[i];
       }
     } catch (e) { /* 忽略 */ }
-    return '';
+    return null;
   }
-  var SELF_SRC = selfScriptUrl();
+  var SELF_TAG = findSelfTag();
+  var SELF_SRC = (SELF_TAG && SELF_TAG.src) || '';
+  var NO_VISIT = !!(SELF_TAG && SELF_TAG.getAttribute && SELF_TAG.getAttribute('data-no-visit'));
 
   /* SDK 本地副本优先：国内直连 jsdelivr 不稳，断网时至少还能加载本地这一份。
      本地副本被删 / 加载失败时，再回退到官方 CDN（@dev 通道，不锁版本）。 */
@@ -158,6 +163,9 @@
 
   /* ── 5. 访问记录 ───────────────────────────────────────────────────────── */
   function logVisit() {
+    // 自带 data-no-visit="1" 的页面（数据看板这类自用页）不记访问
+    if (NO_VISIT) return Promise.resolve(false);
+
     // 页脚那个预热 iframe（隐藏、0 尺寸）会去加载推演台，如果不排除，
     // 每次有人看作品集都会顺带多记一条 `/` 的访问 —— 那是机器流量，不是访客。
     try { if (global.top !== global.self) return Promise.resolve(false); } catch (e) { /* 读不到就按顶层算 */ }
@@ -247,7 +255,9 @@
     return Promise.resolve()
       .then(function () {
         return client.database.from('portfolio_visits')
-          .select('page, referrer, screen, created_at, visitor_id')
+          /* 带上 user_agent：数据看板要用它解析出「设备 / 系统 / 浏览器」。
+             作品集那块面板不用它，多带一列无副作用。 */
+          .select('page, referrer, screen, lang, user_agent, created_at, visitor_id')
           .order('created_at', { ascending: false })
           .limit(n || 8);
       })

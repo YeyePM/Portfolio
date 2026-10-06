@@ -6929,6 +6929,50 @@ render();
     'promotion-lab': 'Case 02 · 大促资源分配推演台'
   };
 
+  /* ── 外域信标 ────────────────────────────────────────────────────────────
+     云服务端对数据面也做 Origin 白名单：只有本应用自己的发布域名调得通，外部域名
+     （GitHub Pages 之类）一律 403 access_denied。作品集挂到自有域名后，本页的云调用
+     会被 CORS 全部拦掉 —— 页面照常可用，但访问不计数、演示记录为空、面板不显形。
+     解法：应用域名上的 /static/beacon.html 是合法 origin，把它当代理，用 1×1 隐藏
+     iframe 叫起来代发。（在应用域名和本地调试下不叫，避免同一次访问被记两遍。） */
+  var APP_ORIGIN = (window.WBCX && window.WBCX.CONFIG && window.WBCX.CONFIG.endpoint)
+    || 'https://e4c0fdd067fd4093a62990e14e8ea091.app.workbuddy.host';
+
+  function isForeignOrigin(){
+    var here = location.origin || '';
+    if (!APP_ORIGIN || here === APP_ORIGIN) return false;                    // 自家域名
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(here)) return false;  // 本地调试
+    return true;
+  }
+  var FOREIGN = isForeignOrigin();
+
+  // params: {p,r} 记访问；{demo,t,a,d,p,r} 记演示动作
+  function beacon(params){
+    if (!FOREIGN || !document.body) return;
+    try {
+      var frames = document.querySelectorAll('iframe[data-wbx-beacon]');
+      if (frames.length >= 8) return;                    // 防雪崩：同一页最多挂 8 个
+      var q = [];
+      for (var k in params){
+        var v = params[k];
+        if (v === null || v === undefined || v === '') continue;
+        q.push(k + '=' + encodeURIComponent(String(v).slice(0, 600)));
+      }
+      if (!q.length) return;
+      q.push('_=' + Date.now());                         // 拆掉缓存，保证每次都是新请求
+      var f = document.createElement('iframe');
+      f.setAttribute('data-wbx-beacon', '1');
+      f.setAttribute('aria-hidden', 'true');
+      f.setAttribute('title', '');
+      f.setAttribute('tabindex', '-1');
+      f.style.cssText = 'position:absolute;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
+      f.src = APP_ORIGIN + '/static/beacon.html?' + q.join('&');
+      document.body.appendChild(f);
+      // 请求早就发完了，1 分钟后把节点撤掉，别一直攒 DOM
+      setTimeout(function(){ try { if (f.parentNode) f.parentNode.removeChild(f); } catch (e) { } }, 60000);
+    } catch (e) { /* 静默：信标失败不该影响任何东西 */ }
+  }
+
   function esc(s){
     return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function(c){
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
@@ -7009,7 +7053,12 @@ render();
       a.setAttribute('data-wbx-bound', '1');
       a.addEventListener('click', function(){
         var key = demoTail(a.getAttribute('href') || '');
+        // 本域直接写云；外域那次写会被 403，由 beacon() 走信标代发（不 foreign 时它是空操作）
         if (window.WBCX) window.WBCX.recordDemo(key, DEMO_LABEL[key], { action: 'open' });
+        beacon({
+          demo: key, t: DEMO_LABEL[key], a: 'open',
+          p: location.pathname || '/', r: document.referrer || ''
+        });
       });
     });
   }
@@ -7034,10 +7083,16 @@ render();
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadPanel);
-  } else {
+  function start(){
+    // 只在有 body 之后才能挂 iframe，所以和面板一起等 DOM
+    beacon({ p: location.pathname || '/', r: document.referrer || '' });
     loadPanel();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
   }
 })();
 </script>
