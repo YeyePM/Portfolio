@@ -5871,7 +5871,7 @@ function doCommit(){
   const subAct = b.LABEL[b.act] || b.act;
   if (next){ state.id = next; state.act = defaultAct(normalize(CASES[next])); }
   render();
-  window.scrollTo({top:0, behavior:'smooth'});
+  scrollTopAfterSwitch();
   const h = document.getElementById('decHint');
   if (h) h.textContent = '';
   showToast(next ? ('已提交「' + subTitle + '」：' + subAct + '，已跳到下一条') : ('已提交「' + subTitle + '」：' + subAct + '（队列已无更多）'));
@@ -5885,7 +5885,7 @@ function gotoStep(dir){
   const ni = idx + dir;
   if (ni < 0 || ni >= list.length) return;
   state.id = list[ni]; state.act = defaultAct(normalize(CASES[list[ni]]));
-  render(); window.scrollTo({top:0, behavior:'smooth'});
+  render(); scrollTopAfterSwitch();
 }
 
 /* ================= 已完成裁决页（顶栏「已完成」入口的落地页） ================= */
@@ -6107,12 +6107,20 @@ document.getElementById('filters').addEventListener('click', function(e){
   renderQueue(); renderRerun(); renderHead(normalize(CASES[state.id]));
 });
 
+/* 换案子后回到页首。窄屏用瞬移而不是平滑滚动：平滑滚动是程序发起的，
+   用户紧接着点底栏的那一下会被浏览器当成「停住这次滚动」吞掉 ——
+   表现就是「第一次点要求商家补证没反应，得先点别的再点它才弹」。 */
+function scrollTopAfterSwitch(){
+  const smooth = window.matchMedia('(min-width:761px)').matches;
+  window.scrollTo({top:0, behavior: smooth ? 'smooth' : 'auto'});
+}
+
 function onRowClick(e){
   const row = e.target.closest('.q-row'); if (!row) return;
   state.id = row.getAttribute('data-id'); state.act = defaultAct(normalize(CASES[state.id]));
   state.opened = true;   /* 点开案件 → 底部裁决栏出现 */
   closeLightbox();       /* 换案子就丢掉上一条的大图，避免浮层里还是旧案的材料 */
-  render(); window.scrollTo({top:0, behavior:'smooth'});
+  render(); scrollTopAfterSwitch();
 }
 document.getElementById('qList').addEventListener('click', onRowClick);
 document.getElementById('rerunList').addEventListener('click', onRowClick);
@@ -6139,16 +6147,32 @@ function closeDecPanel(){
   renderDecPanel(normalize(CASES[state.id]));
 }
 
-document.getElementById('decActions').addEventListener('click', function(e){
-  const opt = e.target.closest('.opt');
-  if (opt && !opt.disabled){
-    state.act = opt.getAttribute('data-k');
-    /* 有表单的动作顺手展开（点了就是准备填），无表单的（采纳/等待重跑/线下核验）保持收起 */
-    panelOpen = !!FORM_ACTS[state.act];
-    const h = document.getElementById('decHint'); if (h) h.textContent = '';
-    renderDecBar(normalize(CASES[state.id]));
-  }
-});
+/* 动作按钮：选中 + 按需展开面板。
+   手机上「点了没反应」的两种典型成因都出在 click 送达不了，而不是这段逻辑：
+   ① 元素带 :hover 时，某些移动内核的第一个 tap 只落 hover、不发 click；
+   ② 点完卡片后紧接着的那一下，正赶上程序发起的平滑滚动，被浏览器当成「停住滚动」吞掉。
+   所以 click 之外再接 pointerup（更早、且触屏上带隐式指针捕获，按下与抬起必然同一个元素；
+   一旦手势变成滚动，浏览器发的是 pointercancel，不会误触发）。
+   两个事件都会到，用「已经在该动作且展开态就不再渲染」做幂等，
+   顺带解决「面板开着时再点同一动作会把刚填的备注重渲染掉」。 */
+function chooseAct(k){
+  if (!k) return;
+  if (state.act === k && panelOpen === !!FORM_ACTS[k]) return;
+  state.act = k;
+  panelOpen = !!FORM_ACTS[k];
+  const h = document.getElementById('decHint'); if (h) h.textContent = '';
+  renderDecBar(normalize(CASES[state.id]));
+}
+function onActPick(e){
+  /* 鼠标不接 pointerup：鼠标在别处按下、拖到按钮上松开也会触发 pointerup（没有隐式捕获），
+     会变成「随手拖一下就换了动作」。鼠标照旧只认 click。 */
+  if (e.type === 'pointerup' && e.pointerType === 'mouse') return;
+  const opt = e.target && e.target.closest ? e.target.closest('.opt') : null;
+  if (!opt || opt.disabled) return;
+  chooseAct(opt.getAttribute('data-k'));
+}
+document.getElementById('decActions').addEventListener('click', onActPick);
+document.getElementById('decActions').addEventListener('pointerup', onActPick);
 /* 卡片「去勾选补证项」：把审核员送到唯一能勾选的地方（底栏补证面板）。
    不滚动页面——面板是固定的、本来就在视野里，硬跳位置只会把人从正在看的证据上拽走。 */
 document.getElementById('erGoPick').addEventListener('click', function(){
