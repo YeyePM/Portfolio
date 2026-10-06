@@ -1,0 +1,3368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>商品发布 · 审核结果与整改</title>
+<!--
+  商家上传端原型（提交后：审核结果 + 整改 + 补证 + 复提）
+  数据：内嵌 eval/cases_json 的 5 个金标用例快照（不接真模型、不 fetch）
+  设计 token 与「审核工作台/index.html」保持一致（Linear 极简灰）
+-->
+<style>
+  :root{
+    --bg:#f5f6f8;
+    --surface:#ffffff;
+    --surface-2:#f3f4f7;
+    --surface-3:#eaecf1;
+    --border:#e5e7ec;
+    --border-2:#d6d9e0;
+    --text:#191b20;
+    --text-2:#545964;
+    --text-3:#6b7280;
+    --text-4:#7f8691;
+    --accent:#5b62d4;
+    --accent-bg:#eef0fc;
+    --accent-border:#d8dcf3;
+    --pass:#1f9d57;    --pass-bg:#e8f8ee;    --pass-border:#c2e9d1;
+    --warn:#b0750e;    --warn-bg:#fdf2dd;    --warn-border:#efdab2;
+    --review:#6d54d6;  --review-bg:#f0ecfc;  --review-border:#dcd2f4;
+    --block:#d23b32;   --block-bg:#fdecea;   --block-border:#f4c8c3;
+    --recheck:#5b6b7a; --recheck-bg:#eef1f4; --recheck-border:#d4dce3;
+    --r:11px; --r-sm:8px; --r-xs:6px;
+    --hdr-h:58px;
+    --shadow-sm:0 1px 2px rgba(22,24,30,.04),0 1px 3px rgba(22,24,30,.06);
+    --shadow-md:0 2px 8px rgba(22,24,30,.07),0 10px 28px rgba(22,24,30,.07);
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:13px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;
+    padding-bottom:84px;
+  }
+  button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit;}
+
+  /* ============ 顶栏（商家中心） ============ */
+  .app-header{
+    position:sticky;top:0;z-index:30;
+    background:rgba(255,255,255,.86);
+    backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);
+    border-bottom:1px solid var(--border);
+  }
+  .hdr{max-width:1560px;margin:0 auto;padding:0 22px;height:var(--hdr-h);display:flex;align-items:center;gap:20px;}
+  .brand{display:flex;align-items:center;gap:10px;flex:none;}
+  .brand-mark{
+    width:28px;height:28px;border-radius:8px;flex:none;
+    background:linear-gradient(150deg,#6b73e0,#4b52c4);color:#fff;
+    font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;
+    box-shadow:var(--shadow-sm);
+  }
+  .brand-name{font-size:15px;font-weight:700;letter-spacing:-.01em;}
+  .brand-sub{font-size:12px;color:var(--text-3);}
+  .crumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-3);min-width:0;}
+  .crumb b{color:var(--text);font-weight:600;}
+  .crumb .sep{color:var(--text-4);}
+  .hdr-right{margin-left:auto;display:flex;align-items:center;gap:16px;font-size:13px;color:var(--text-3);flex:none;}
+  .hdr-link{cursor:pointer;display:inline-flex;align-items:center;gap:5px;position:relative;}
+  .hdr-link:hover{color:var(--text);}
+  .hdr-link .rdot{width:6px;height:6px;border-radius:50%;background:var(--block);}
+  /* 顶栏右侧：商家角色切换 */
+  .shop-sw{position:relative;}
+  .shop-chip{
+    display:inline-flex;align-items:center;gap:7px;font-family:inherit;cursor:pointer;
+    font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;
+    background:var(--surface);border:1px solid var(--border-2);border-radius:var(--r-sm);
+    padding:5px 11px;
+    transition:background .14s ease,border-color .14s ease,box-shadow .14s ease;
+  }
+  .shop-chip:hover{background:var(--surface-2);}
+  .shop-chip.open{border-color:var(--accent-border);box-shadow:var(--shadow-sm);}
+  .shop-chip::before{content:"";width:6px;height:6px;border-radius:2px;background:var(--accent);flex:none;}
+  .shop-chip .sw-n{max-width:190px;overflow:hidden;text-overflow:ellipsis;}
+  .shop-chip .sw-c{flex:none;font-size:9px;color:var(--text-4);transition:transform .16s ease;}
+  .shop-chip.open .sw-c{transform:rotate(180deg);}
+  .shop-pop{
+    position:absolute;right:0;top:calc(100% + 12px);z-index:5;width:300px;
+    background:var(--surface);border:1px solid var(--border-2);border-radius:var(--r);
+    box-shadow:var(--shadow-md);padding:6px;max-height:360px;overflow:auto;
+  }
+  .sp-head{font-size:11px;font-weight:600;color:var(--text-3);letter-spacing:.03em;padding:6px 10px 7px;}
+
+  /* ============ 外壳：左导航 + 内容 ============ */
+  .shell{max-width:1560px;margin:0 auto;display:flex;align-items:flex-start;gap:22px;padding:0 22px;}
+
+  /* ============ 左侧导航 ============ */
+  .side{width:208px;flex:none;position:sticky;top:var(--hdr-h);max-height:calc(100vh - var(--hdr-h));overflow:auto;padding:16px 0 24px;}
+  .side-nav{display:flex;flex-direction:column;gap:2px;}
+  .nav-t{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;color:var(--text-3);padding:13px 12px 6px;}
+  .nav-t svg,.nav-item svg{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+  .nav-item{
+    display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text-2);
+    padding:7px 12px;border-radius:var(--r-sm);cursor:pointer;border:1px solid transparent;
+    transition:background .14s ease,color .14s ease,border-color .14s ease;
+  }
+  .nav-item:hover{background:var(--surface-2);color:var(--text);}
+  .nav-item.on{background:var(--surface);color:var(--accent);font-weight:600;border-color:var(--accent-border);box-shadow:var(--shadow-sm);}
+  .nav-item.sub{padding-left:12px;margin-left:24px;}
+  .nav-badge{
+    margin-left:auto;min-width:17px;height:17px;padding:0 5px;border-radius:9px;
+    background:var(--block);color:#fff;font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .sp-item{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:var(--r-sm);cursor:pointer;border:1px solid transparent;
+    transition:background .14s ease,border-color .14s ease;}
+  .sp-item:hover{background:var(--surface-2);}
+  .sp-item.on{background:var(--accent-bg);border-color:var(--accent-border);}
+  .sp-dot{width:7px;height:7px;border-radius:50%;flex:none;margin-top:5px;}
+  .sp-main{flex:1;min-width:0;}
+  .sp-n{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sp-s{font-size:11px;color:var(--text-3);margin-top:2px;line-height:1.5;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  /* ============ 内容区 ============ */
+  .content{flex:1;min-width:0;padding:18px 0 90px;}
+  .page-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:14px;}
+  .ph-main{min-width:0;}
+  .ph-title{font-size:20px;font-weight:700;letter-spacing:-.02em;}
+  .ph-meta{font-size:12px;color:var(--text-3);margin-top:5px;line-height:1.65;}
+  .ph-right{margin-left:auto;display:flex;align-items:center;gap:12px;flex:none;padding-top:3px;}
+  .ph-status{font-size:12px;font-weight:600;padding:4px 12px;border-radius:20px;border:1px solid;}
+  .ph-status.pass{color:var(--pass);background:var(--pass-bg);border-color:var(--pass-border);}
+  .ph-status.warn{color:var(--warn);background:var(--warn-bg);border-color:var(--warn-border);}
+  .ph-status.review{color:var(--review);background:var(--review-bg);border-color:var(--review-border);}
+  .ph-status.block{color:var(--block);background:var(--block-bg);border-color:var(--block-border);}
+  .ph-status.recheck{color:var(--recheck);background:var(--recheck-bg);border-color:var(--recheck-border);}
+  .link-btn{background:none;border:none;color:var(--accent);font-size:13px;font-weight:500;cursor:pointer;padding:5px 2px;}
+  .link-btn:hover{text-decoration:underline;}
+
+  /* ============ 卡片 ============ */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px;}
+  .card-pad{padding:20px 22px;}
+  .sec-head{display:flex;align-items:center;gap:9px;margin-bottom:3px;}
+  .sec-title{font-size:15px;font-weight:600;letter-spacing:-.012em;}
+  .sec-sub{font-size:12px;color:var(--text-3);margin-bottom:14px;}
+  .sec-num{
+    font-size:11px;font-weight:600;color:var(--text-3);
+    background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-xs);
+    padding:1px 6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+
+  /* ============ 横向步骤条 ============ */
+  .steps{display:flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:15px 20px;margin-bottom:16px;overflow:hidden;}
+  .stp{display:flex;align-items:center;gap:9px;flex:none;}
+  .stp-txt{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .stp-txt .stp-name{line-height:1.25;}
+  .stp-txt .stp-note{line-height:1.25;}
+  .stp-dot{
+    width:22px;height:22px;border-radius:50%;flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
+    background:var(--surface-3);color:var(--text-4);border:1px solid var(--border-2);
+  }
+  .stp.done .stp-dot{background:var(--pass-bg);color:var(--pass);border-color:var(--pass-border);}
+  .stp.now .stp-dot{background:var(--accent-bg);color:var(--accent);border-color:var(--accent-border);}
+  .stp.hold .stp-dot{background:var(--recheck-bg);color:var(--recheck);border-color:var(--recheck-border);}
+  .stp-name{font-size:13px;font-weight:600;color:var(--text-3);white-space:nowrap;}
+  .stp.done .stp-name{color:var(--text-2);}
+  .stp.now .stp-name{color:var(--text);font-weight:700;}
+  .stp-note{font-size:11px;color:var(--text-3);white-space:nowrap;}
+  .stp-line{flex:1;height:1px;background:var(--border-2);margin:0 12px;min-width:12px;}
+
+  /* ============ 双列 ============ */
+  .cols{display:flex;align-items:flex-start;gap:16px;}
+  .col-main{flex:1;min-width:0;}
+  .col-rail{width:302px;flex:none;}
+
+  /* ============ 驳回原因（键值行） ============ */
+  .rej-head{display:flex;align-items:center;gap:9px;margin-bottom:3px;}
+  .rej-badge{min-width:18px;height:18px;padding:0 6px;border-radius:9px;background:var(--block);color:#fff;
+    font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;}
+  .rej-banner{
+    display:flex;gap:9px;align-items:flex-start;margin:12px 0 2px;
+    background:var(--block-bg);border:1px solid var(--block-border);color:#a8382f;
+    border-radius:var(--r-sm);padding:10px 13px;font-size:13px;line-height:1.65;
+  }
+  .rej-item{border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 14px 8px;margin-top:10px;}
+  .ri-head{display:flex;align-items:center;gap:9px;padding-bottom:2px;}
+  .ri-n{font-family:var(--mono);font-size:11px;color:var(--text-4);flex:none;}
+  .ri-t{flex:1;min-width:0;font-size:13px;font-weight:600;letter-spacing:-.01em;}
+  .kv{display:grid;grid-template-columns:78px 1fr;gap:12px;padding:9px 0;border-top:1px dashed var(--border);font-size:13px;}
+  .kv:first-child{border-top:none;}
+  .kv-k{color:var(--text-3);}
+  .kv-v{color:var(--text-2);line-height:1.7;min-width:0;word-break:break-word;}
+  .quo{background:var(--block-bg);color:var(--block);border-radius:4px;padding:1px 5px;font-weight:600;}
+  .rej-fix{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
+  .rej-fix-t{font-size:13px;font-weight:600;margin-bottom:8px;}
+  .rej-fix-list{display:flex;flex-direction:column;gap:6px;}
+  .rej-fix-row{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--text-2);line-height:1.65;}
+  .rej-fix-row .n{color:var(--text-4);flex:none;font-family:var(--mono);font-size:11px;margin-top:2px;}
+  .mode-tag{
+    display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);
+    background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-xs);padding:2px 9px;
+  }
+  .mode-tag::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent);}
+  .mode-tag.degraded{color:#a8382f;background:var(--block-bg);border-color:var(--block-border);}
+  .mode-tag.degraded::before{background:var(--block);}
+  .mode-tag.plain{color:var(--text-3);background:transparent;border-style:dashed;}
+  .mode-tag.plain::before{display:none;}
+  .ts{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-3);}
+
+  /* ============ 右栏：进度 + 时间线 ============ */
+  .rail-prog{display:flex;align-items:flex-end;gap:12px;margin-bottom:12px;}
+  .rp-num{font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1;}
+  .rp-num small{font-size:13px;font-weight:600;color:var(--text-3);letter-spacing:0;}
+  .rp-note{font-size:12px;color:var(--text-3);line-height:1.6;padding-bottom:3px;}
+  .tl{position:relative;padding-left:20px;}
+  .tl::before{content:"";position:absolute;left:5px;top:6px;bottom:8px;width:1px;background:var(--border-2);}
+  .tl-item{position:relative;padding-bottom:14px;}
+  .tl-item:last-child{padding-bottom:0;}
+  .tl-dot{position:absolute;left:-19px;top:4px;width:11px;height:11px;border-radius:50%;background:var(--surface-3);border:2px solid var(--border-2);}
+  .tl-dot.done{background:var(--pass);border-color:var(--pass);}
+  .tl-dot.now{background:var(--accent);border-color:var(--accent);}
+  .tl-dot.hold{background:var(--recheck);border-color:var(--recheck);}
+  .tl-t{font-size:13px;font-weight:600;}
+  .tl-d{font-size:12px;color:var(--text-3);line-height:1.6;margin-top:2px;}
+  .rail-empty{font-size:13px;color:var(--text-3);line-height:1.75;}
+  /* 剩余补证时间（原型示意） */
+  .cd-num{font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1;color:var(--block);display:flex;align-items:baseline;gap:5px;}
+  .cd-num em{font-style:normal;font-size:13px;font-weight:600;letter-spacing:0;}
+  .cd-bar{height:6px;border-radius:20px;background:var(--surface-3);overflow:hidden;margin:14px 0 10px;}
+  .cd-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,#e4776b,var(--block));}
+  .cd-hint{font-size:12px;color:var(--text-3);line-height:1.65;}
+  .cd-demo{font-size:11px;color:var(--text-4);line-height:1.6;margin-top:10px;padding-top:9px;border-top:1px dashed var(--border);}
+
+  /* ============ 底部操作栏 ============ */
+  .act-bar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(255,255,255,.94);
+    backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);
+    border-top:1px solid var(--border);box-shadow:0 -4px 18px rgba(22,24,30,.08);}
+  .act-inner{max-width:1560px;margin:0 auto;padding:11px 22px;display:flex;align-items:center;gap:18px;}
+  .act-lead{display:flex;align-items:center;gap:13px;min-width:0;flex:1;}
+  .act-lead .prog-bar{max-width:220px;}
+  .act-count{font-size:13px;color:var(--text-2);white-space:nowrap;}
+  .act-count b{color:var(--text);font-weight:700;}
+  .act-hint{font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  .act-actions{margin-left:auto;display:flex;align-items:center;gap:10px;flex:none;}
+  .act-sep{width:1px;height:22px;background:var(--border-2);flex:none;}
+
+  /* ============ 待办清单 ============ */
+  .todo-group{margin-bottom:20px;}
+  .todo-group:last-child{margin-bottom:0;}
+  .tg-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .tg-name{font-size:13px;font-weight:600;}
+  .tg-count{font-size:11px;color:var(--text-3);background:var(--surface-3);border-radius:20px;padding:1px 8px;}
+  .todo{
+    display:flex;gap:11px;align-items:flex-start;
+    border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:8px;
+    transition:border-color .14s ease,background .14s ease;cursor:pointer;
+  }
+  .todo:hover{border-color:var(--border-2);background:#fcfcfd;}
+  .todo:last-child{margin-bottom:0;}
+  .todo.done{background:var(--pass-bg);border-color:var(--pass-border);}
+  .todo-box{
+    flex:none;width:16px;height:16px;margin-top:2px;border-radius:4px;
+    border:1.5px solid var(--border-2);background:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:11px;color:transparent;
+  }
+  .todo.done .todo-box{background:var(--pass);border-color:var(--pass);color:#fff;}
+  .todo-main{min-width:0;flex:1;}
+  .todo-title{font-size:13px;font-weight:600;line-height:1.55;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;}
+  .todo.done .todo-title{color:var(--text-2);}
+  .loc{
+    flex:none;font-size:11px;font-weight:600;color:var(--text-2);
+    background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-xs);
+    padding:1px 7px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;
+  }
+  .todo-body{font-size:12px;color:var(--text-2);line-height:1.7;margin-top:4px;}
+  .todo-meta{font-size:12px;color:var(--text-3);margin-top:6px;line-height:1.7;}
+  .todo-meta b{color:var(--text-2);font-weight:600;}
+  /* 问题下方的内联处理区：整改/补证直接挂在对应问题下，不再另开一张待办卡 */
+  .hit-act{margin-top:12px;border-top:1px dashed var(--border);padding-top:12px;}
+  .hit-act .ha-h{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--text-4);margin-bottom:7px;}
+  .hit-act .ha-h + .todo{margin-top:0;}
+  .hit-act .todo{margin-bottom:8px;}
+  .hit-act .todo:last-child{margin-bottom:0;}
+  .hit-note{
+    font-size:12px;color:var(--text-3);line-height:1.7;
+    background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 12px;
+  }
+  .sup-up{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px;}
+  .sup-up .file{background:var(--surface-2);}
+  .sup-up .fix-hint{margin-top:0;}
+  .btn.tiny{font-size:12px;padding:4px 11px;font-weight:500;}
+  /* 文字类整改：就地输入改后内容，点「提交修改」后同步刷新材料图 */
+  .fix-input{
+    width:100%;margin-top:9px;padding:7px 10px;font-size:13px;font-family:inherit;
+    color:var(--text);background:var(--surface);border:1px solid var(--border-2);
+    border-radius:var(--r-sm);cursor:text;transition:border-color .14s ease,box-shadow .14s ease;
+  }
+  .fix-input::placeholder{color:var(--text-4);}
+  .fix-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg);}
+  .fix-hint{font-size:11px;color:var(--text-4);line-height:1.6;margin-top:6px;}
+  .empty{
+    border:1px dashed var(--border-2);border-radius:var(--r-sm);padding:18px;text-align:center;
+    font-size:13px;color:var(--text-3);line-height:1.8;
+  }
+
+  /* ============ 进度 & 提交 ============ */
+  .prog-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+  .prog-bar{flex:1;height:5px;border-radius:20px;background:var(--surface-3);overflow:hidden;}
+  .prog-fill{height:100%;width:0;background:var(--accent);border-radius:20px;transition:width .22s ease;}
+  .prog-txt{font-size:12px;color:var(--text-2);white-space:nowrap;}
+  .file{
+    display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);
+    background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-xs);padding:2px 9px;
+  }
+  .actions{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap;}
+  .btn{
+    font-size:13px;font-weight:500;padding:8px 18px;border-radius:var(--r-sm);
+    border:1px solid var(--border-2);background:var(--surface);color:var(--text-2);cursor:pointer;
+    transition:background .14s ease,color .14s ease,border-color .14s ease;
+  }
+  .btn:hover:not(:disabled){background:var(--surface-2);color:var(--text);border-color:#d2d2d9;}
+  .btn:disabled{opacity:.45;cursor:not-allowed;}
+  .btn.primary{background:var(--text);color:#fff;border-color:var(--text);}
+  .btn.primary:hover:not(:disabled){background:#2b2b33;}
+  .hint{font-size:12px;color:var(--text-3);}
+  .hide{display:none;}
+
+  /* ============ 对照：商家填写 / 上传内容 ≠ 材料显示内容 ============ */
+  .why-item{border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;margin-bottom:10px;}
+  .why-item:last-child{margin-bottom:0;}
+  .why-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:11px;}
+  .tag{
+    font-size:11px;font-weight:600;border-radius:var(--r-xs);padding:2px 8px;
+    background:var(--surface-2);border:1px solid var(--border);color:var(--text-2);
+  }
+  .tag.high{background:var(--block-bg);border-color:var(--block-border);color:var(--block);}
+  .tag.mid{background:var(--warn-bg);border-color:var(--warn-border);color:var(--warn);}
+  .tag.low{background:var(--pass-bg);border-color:var(--pass-border);color:var(--pass);}
+  .tag.na{background:var(--recheck-bg);border-color:var(--recheck-border);color:var(--recheck);}
+  .tag.soft{background:transparent;border-style:dashed;color:var(--text-3);font-weight:500;}
+  .cmp{display:grid;grid-template-columns:1fr 30px 1fr;align-items:stretch;gap:0;}
+  .cmp-side{padding:10px 13px;border-radius:var(--r-sm);font-size:13px;line-height:1.7;}
+  .cmp-side.left{background:var(--surface-2);border:1px solid var(--border);color:var(--text-2);}
+  .cmp-side.right{background:var(--accent-bg);border:1px solid var(--accent-border);color:#3f478f;}
+  .cmp-k{display:block;font-size:11px;font-weight:600;letter-spacing:.04em;margin-bottom:5px;opacity:.75;}
+  .cmp-mid{display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text-4);}
+  .why-violation{
+    margin-top:11px;font-size:13px;color:var(--text-2);line-height:1.75;
+    border-top:1px dashed var(--border);padding-top:10px;
+  }
+  .why-violation b{color:var(--text);font-weight:600;}
+  .pass-list{display:flex;flex-direction:column;gap:7px;}
+  .pass-row{display:flex;gap:9px;align-items:flex-start;font-size:12px;color:var(--text-2);line-height:1.65;}
+  .pass-row .ok{color:var(--pass);flex:none;font-size:11px;margin-top:2px;}
+  details.fold{border-top:1px solid var(--border);margin-top:24px;padding-top:20px;margin-bottom:20px;}
+  .card-pad > details.fold:last-child{margin-bottom:0;}
+  details.fold > summary{
+    display:inline-flex;align-items:center;gap:7px;cursor:pointer;list-style:none;
+    font-size:12px;font-weight:600;color:var(--text-3);
+    background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:5px 11px;
+  }
+  details.fold > summary::-webkit-details-marker{display:none;}
+  details.fold > summary::before{content:"▸";font-size:9px;transition:transform .16s ease;}
+  details.fold[open] > summary::before{transform:rotate(90deg);}
+  details.fold > summary:hover{color:var(--text);border-color:var(--border-2);}
+  .fold-body{margin-top:14px;}
+
+  /* ============ 规则与申诉 ============ */
+  .rule-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+  .rule{border:1px solid var(--border);border-radius:var(--r-sm);padding:13px 14px;}
+  .rule-t{font-size:13px;font-weight:600;margin-bottom:5px;}
+  .rule-d{font-size:12px;color:var(--text-2);line-height:1.7;}
+  .appeal{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px 16px;margin-top:16px;}
+  .appeal-t{font-size:13px;font-weight:600;margin-bottom:8px;}
+  .appeal-line{font-size:13px;color:var(--text-2);line-height:1.75;margin-bottom:5px;}
+  .appeal-line:last-child{margin-bottom:0;}
+  .appeal-line b{color:var(--text);font-weight:600;}
+  .foot{margin-top:26px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:var(--text-3);line-height:1.85;}
+  .foot b{color:var(--text-2);font-weight:600;}
+
+  /* ============ 补充：说明块 / 键值内嵌 / 底栏按钮 ============ */
+  .note{
+    font-size:13px;color:var(--text-2);line-height:1.7;background:var(--surface-2);
+    border-left:2px solid var(--border-2);border-radius:0 var(--r-xs) var(--r-xs) 0;padding:9px 13px;margin-top:12px;
+  }
+  .note b{color:var(--text);font-weight:600;}
+  .ph-meta b{color:var(--text-2);font-weight:600;}
+  .kv-v code{
+    font-family:var(--mono);font-size:11px;color:var(--text-2);
+    background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-xs);padding:1px 6px;
+  }
+  .kv-v .tag + .tag{margin-left:6px;}
+  .rej-banner{background:var(--block-bg);border-color:var(--block-border);color:#a8382f;}
+  .rej-banner.warn{background:var(--warn-bg);border-color:var(--warn-border);color:#8a5a09;}
+  .rej-banner.review{background:var(--review-bg);border-color:var(--review-border);color:#4f3aab;}
+  .rej-banner.recheck{background:var(--recheck-bg);border-color:var(--recheck-border);color:var(--recheck);}
+  .btn.ghost{background:transparent;border-color:var(--border-2);}
+  .btn.ghost:hover:not(:disabled){background:var(--surface-2);}
+
+  @media (max-width:1180px){
+    .cols{flex-direction:column;}
+    .col-rail{width:100%;}
+  }
+  @media (max-width:900px){
+    .side{display:none;}
+    .crumb{display:none;}
+    .brand-sub{display:none;}
+  }
+  @media (max-width:760px){
+    .cmp{grid-template-columns:1fr;}
+    .cmp-mid{padding:6px 0;}
+    .stp-note{display:none;}
+    .hdr-right .hdr-link{display:none;}
+    .act-hint{display:none;}
+    .act-actions .btn.ghost{display:none;}
+  }
+  /* ===== 商家上传材料：缩略图网格 + 点开看大图 ===== */
+  .imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:14px;align-items:stretch;}
+  .img-th{margin:0;border:1px solid var(--border-2);border-radius:var(--r-sm);overflow:hidden;
+    background:var(--surface);cursor:zoom-in;
+    transition:box-shadow .16s ease,transform .16s ease,border-color .16s ease;}
+  .img-th:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(15,23,42,.14);border-color:#cfd4de;}
+  .img-th:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  /* 材料图有长有短（报告是竖版、主图是方图），统一装进同一个比例的框里居中缩放，
+     缩略图阵列才是齐的。说明文字不进阵列——只在放大层里出现 */
+  .it-frame{aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;
+    padding:11px;background:var(--surface-2);border-bottom:1px solid var(--border);}
+  .it-frame svg,.lb-img svg{display:block;
+    font-family:'PingFang SC','Microsoft YaHei','Hiragino Sans GB',system-ui,-apple-system,sans-serif;}
+  .it-frame svg{width:auto;height:auto;max-width:100%;max-height:100%;
+    border-radius:4px;box-shadow:0 2px 8px rgba(15,23,42,.13);}
+  /* 材料徽标单独占一行：不压图——图本身就是证据，任何一个角都不该被标签盖住 */
+  .it-top{display:flex;align-items:center;gap:6px;padding:7px 9px;
+    border-bottom:1px solid var(--border);background:var(--surface);}
+  .it-loc{font-size:11px;font-weight:700;color:var(--text);}
+  .it-chg{font-size:11px;font-weight:600;white-space:nowrap;color:var(--pass);
+    background:var(--pass-bg);border:1px solid var(--pass-border);border-radius:999px;padding:2px 7px;}
+  .it-type{margin-left:auto;font-size:11px;font-weight:600;white-space:nowrap;color:var(--accent);
+    background:var(--accent-bg);border:1px solid rgba(76,88,214,.18);border-radius:999px;padding:2px 7px;}
+  .it-noart{padding:0 12px;text-align:center;font-size:12px;color:var(--text-4);}
+  .imgs-na{font-size:12px;color:var(--text-4);background:var(--surface-2);border:1px dashed var(--border-2);
+    border-radius:var(--r-sm);padding:14px 16px;line-height:1.7;}
+
+  /* 放大浮层 */
+  .lb{position:fixed;inset:0;z-index:300;display:none;background:rgba(10,14,24,.74);padding:30px 24px;}
+  .lb.show{display:flex;align-items:center;justify-content:center;}
+  .lb-box{background:var(--surface);border-radius:14px;overflow:hidden;width:100%;
+    max-width:min(940px,95vw);max-height:93vh;display:flex;flex-direction:column;
+    box-shadow:0 30px 74px rgba(0,0,0,.46);}
+  .lb-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);}
+  .lb-title{font-size:13px;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;letter-spacing:-.01em;}
+  .lb-case{font-size:11px;color:var(--text-4);}
+  .lb-close{margin-left:auto;flex:none;font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;
+    background:var(--surface-2);border:1px solid var(--border-2);border-radius:var(--r-sm);padding:6px 12px;}
+  .lb-close:hover{background:#e9ebf1;color:var(--text);}
+  .lb-body{display:grid;grid-template-columns:minmax(0,1fr) 296px;min-height:0;flex:1;}
+  .lb-img{background:var(--surface-2);display:flex;align-items:center;justify-content:center;
+    padding:20px;overflow:auto;}
+  .lb-img svg{width:auto;height:auto;max-width:100%;max-height:62vh;
+    border-radius:7px;box-shadow:0 10px 30px rgba(15,23,42,.2);}
+  .lb-side{padding:15px 16px;border-left:1px solid var(--border);overflow:auto;}
+  .lb-k{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--text-4);margin-bottom:7px;}
+  .lb-d{font-size:12px;line-height:1.85;color:var(--text-2);}
+  .lb-nav{display:flex;align-items:center;gap:9px;padding:10px 16px;border-top:1px solid var(--border);}
+  .lb-btn{font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;
+    background:var(--surface-2);border:1px solid var(--border-2);border-radius:var(--r-sm);padding:5px 12px;}
+  .lb-btn:hover:not(:disabled){background:#e9ebf1;color:var(--text);}
+  .lb-btn:disabled{opacity:.42;cursor:not-allowed;}
+  .lb-idx{font-size:12px;color:var(--text-3);min-width:54px;text-align:center;}
+  .lb-hint{margin-left:auto;font-size:11px;color:var(--text-4);}
+  @media (max-width:820px){
+    .lb-body{grid-template-columns:1fr;}
+    .lb-side{border-left:none;border-top:1px solid var(--border);}
+    .lb-img svg{max-height:46vh;}
+    .lb-hint{display:none;}
+  }
+  /* 商家侧「你提交的商品信息」卡：回放当时提交的图文 */
+  .orig-title{font-size:16px;font-weight:600;line-height:1.5;color:var(--text);margin-bottom:14px;}
+  .orig-h{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--text-4);margin-bottom:7px;}
+  .orig-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+  .imgs.mini{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));}
+
+  /* ============ 手机端（≤900px）：步骤条改纵向 ============
+     原横向摆法在窄屏放不下，.steps 的 overflow:hidden 会把第 4、5 步整块裁掉
+     （390px 实测：内容 599px / 可见 344px，只看得见前 3 步）；
+     ≤760px 又用 .stp-note{display:none} 把每步说明藏了。
+     改纵向后一步一行、5 步全可见，并把说明恢复出来。
+     规则写在 ≤900px 内，桌面端不受影响。 */
+  @media (max-width:900px){
+    .steps{display:block;overflow:visible;padding:12px 16px;}
+    .stp{width:100%;padding:7px 0;align-items:flex-start;}
+    .stp-line{display:none;}
+    .stp-note{display:block;}
+    .stp-dot{margin-top:1px;}
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="hdr">
+    <div class="brand">
+      <div class="brand-mark">商</div>
+      <div>
+        <div class="brand-name">商家中心</div>
+        <div class="brand-sub">商品审核与整改</div>
+      </div>
+    </div>
+    <div class="crumb">
+      <span>商品管理</span><span class="sep">/</span>
+      <span>审核记录</span><span class="sep">/</span>
+      <b>补证中心</b>
+    </div>
+    <div class="hdr-right">
+      <span class="hdr-link">帮助中心</span>
+      <span class="hdr-link">消息<span class="rdot" style="margin-left:1px"></span></span>
+      <span class="hdr-link">客服</span>
+      <div class="shop-sw">
+        <button class="shop-chip" id="shopChip" type="button" aria-haspopup="true" aria-expanded="false"></button>
+        <div class="shop-pop hide" id="shopList"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <!-- 左侧导航 -->
+  <aside class="side">
+    <nav class="side-nav">
+      <div class="nav-item"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg><span>首页</span></div>
+      <div class="nav-t"><svg viewBox="0 0 24 24"><path d="M4 7h16v13H4z"/><path d="M4 7 8 3h8l4 4"/><path d="M12 3v4"/></svg><span>商品</span></div>
+      <div class="nav-item sub" data-nav="list"><span>商品列表</span></div>
+      <div class="nav-item sub" data-nav="publish"><span>商品发布</span></div>
+      <div class="nav-item sub" data-nav="records"><span>审核记录</span></div>
+      <div class="nav-item sub on" data-nav="evidence"><span>补证中心</span><span class="nav-badge" id="navBadge">1</span></div>
+      <div class="nav-t"><svg viewBox="0 0 24 24"><path d="M3 20V10M9 20V4M15 20v-7M21 20V8"/></svg><span>经营</span></div>
+      <div class="nav-item sub" data-nav="orders"><span>订单管理</span></div>
+      <div class="nav-item sub" data-nav="data"><span>数据中心</span></div>
+      <div class="nav-item sub" data-nav="service"><span>服务市场</span></div>
+      <div class="nav-item sub" data-nav="shop"><span>店铺设置</span></div>
+    </nav>
+  </aside>
+
+  <!-- 内容区 -->
+  <main class="content">
+    <div class="page-head">
+      <div class="ph-main">
+        <div class="ph-title" id="phTitle">—</div>
+        <div class="ph-meta" id="phMeta"></div>
+      </div>
+      <div class="ph-right">
+        <span class="ph-status" id="phStatus"></span>
+        <button class="link-btn" id="ruleLink">查看审核细则</button>
+      </div>
+    </div>
+
+    <div class="steps" id="steps"></div>
+
+    <div class="cols">
+      <div class="col-main" id="colMain"></div>
+      <div class="col-rail" id="colRail"></div>
+    </div>
+
+    <div class="foot" id="foot"></div>
+  </main>
+</div>
+
+<input type="file" id="fileInput" multiple hidden>
+
+<!-- 底部操作栏 -->
+<div class="act-bar">
+  <div class="act-inner">
+    <div class="act-lead" id="actLead"></div>
+    <div class="act-actions" id="actActions"></div>
+  </div>
+</div>
+
+<!-- ===== 商家上传材料：点击放大的只读浮层 =====
+     必须放在 <script> 之前：脚本里要给它绑事件，元素得先存在 -->
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="商家上传材料预览">
+  <div class="lb-box">
+    <div class="lb-head">
+      <span class="lb-title" id="lbTitle"></span>
+      <button class="lb-close" id="lbClose" aria-label="关闭预览">✕ 关闭</button>
+    </div>
+    <div class="lb-body">
+      <div class="lb-img" id="lbImg"></div>
+      <div class="lb-side" id="lbSide"></div>
+    </div>
+    <div class="lb-nav">
+      <button class="lb-btn" id="lbPrev">‹ 上一张</button>
+      <span class="lb-idx" id="lbIdx"></span>
+      <button class="lb-btn" id="lbNext">下一张 ›</button>
+      <span class="lb-hint">← → 切换 · Esc 关闭</span>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ 内嵌数据（由 eval/cases_json/*.json 注入，勿手改） ============ */
+const CASES = {"C31":{
+  "id": "C31",
+  "version_context": "v1.9 新增；第六轮线上回流；REVIEW 路径 skill2_invocation 凭证锚点（C29/C30 为 BLOCK 路径）",
+  "input": {
+    "category": "家居日用",
+    "title": "酒精喷雾",
+    "merchant_claims": [
+      "杀菌率99.999%",
+      "75%酒精 广谱杀菌"
+    ],
+    "sku_attributes": {
+      "乙醇含量": "75%±5%（v/v）",
+      "杀灭微生物": "大肠杆菌、金黄色葡萄球菌、白色念珠菌",
+      "卫生许可证": "（粤）卫消证字（2023）第0456号",
+      "执行标准": "GB/T 26373",
+      "净含量": "500ml + 100ml",
+      "保质期": "24 个月",
+      "店铺": "净卫日化旗舰店"
+    },
+    "images": [
+      {
+        "locator": "图1",
+        "type": "report",
+        "source": "真实图片",
+        "description": "第三方杀灭率检测报告：报告编号 KJ20240618；委托单位=康洁生物科技有限公司；样品名称=75%酒精消毒喷雾；大肠杆菌杀灭率 99.999%（作用时间1min，合格）；金黄色葡萄球菌杀灭率 99.999%（作用时间1min，合格）；检验结论=合格；CMA 认证编号 201819046305；检测日期 2024-06-18；未检测白色念珠菌"
+      },
+      {
+        "locator": "图2",
+        "type": "main_image",
+        "source": "真实图片",
+        "description": "主图：一大一小两瓶蓝色标签喷雾实拍，与净含量 500ml+100ml 吻合"
+      },
+      {
+        "locator": "图3",
+        "type": "promo_image",
+        "source": "真实图片",
+        "description": "宣传图：大字「杀菌率99.999%」，副标「75%酒精 广谱杀菌」，盾牌/十字防菌元素；无菌种与作用时间限定标注"
+      }
+    ]
+  },
+  "expected_output": {
+    "conclusion": "REVIEW",
+    "conclusion_rationale": "核心数值主张（99.999%/75%）有 CMA A 级证据支撑，数值本身不误杀；但「广谱杀菌」范围超出证据、报告条件（作用时间1min）未标注、白色念珠菌参数无报告覆盖、委托主体与店铺主体不一致存疑——消毒类高影响功效候选在证据不完整/主体未锚定时按全局红线③转人工，不得由模型直接定性 BLOCK",
+    "hits": [
+      {
+        "content_layer": "功效/性能",
+        "dimension": "scope_match",
+        "reason_code": "SCOPE_EXPANSION",
+        "severity": "高",
+        "confidence": "高",
+        "claim": "广谱杀菌",
+        "evidence": "图1报告仅覆盖大肠杆菌、金黄色葡萄球菌 2 种细菌，无真菌/病毒类别证据",
+        "violation": "2 种细菌的检测结论被扩大为「广谱」"
+      },
+      {
+        "content_layer": "功效/性能",
+        "dimension": "condition_match",
+        "reason_code": "CONDITION_OMISSION",
+        "severity": "中",
+        "confidence": "高",
+        "claim": "杀菌率99.999%",
+        "evidence": "图1报告限定「作用时间1min」；主张与图3大字均未标注该条件",
+        "violation": "实验室条件下的杀灭率结论被无条件下放为日常使用效果"
+      },
+      {
+        "content_layer": "参数/规格",
+        "dimension": "evidence_grade",
+        "reason_code": "SOURCE_INSUFFICIENT",
+        "severity": "中",
+        "confidence": "高",
+        "claim": "杀灭微生物含白色念珠菌（详情页参数）",
+        "evidence": "图1报告未检测白色念珠菌（MISSING，对应 evidence_requests）",
+        "violation": "参数承诺的杀灭对象超出报告覆盖范围"
+      },
+      {
+        "content_layer": "功效/性能",
+        "dimension": "interpretation",
+        "reason_code": "SCOPE_EXPANSION / CONDITION_OMISSION",
+        "severity": "中",
+        "confidence": "中",
+        "claim": "图3大字「杀菌率99.999%」+ 副标「广谱杀菌」",
+        "evidence": "醒目主张未呈现菌种与作用时间限定，与报告实际限定范围不一致",
+        "violation": "普通消费者会理解为普遍、无条件成立"
+      },
+      {
+        "content_layer": "资质/身份",
+        "dimension": "entity_match",
+        "reason_code": "ENTITY_MISMATCH / POLICY_AMBIGUOUS（待人工仲裁）",
+        "severity": "中",
+        "confidence": "中",
+        "claim": "图1报告为本商品背书",
+        "evidence": "委托单位=康洁生物科技有限公司 ≠ 店铺=净卫日化旗舰店；样品名称与商品吻合但委托/品牌授权关系无佐证",
+        "violation": "证据对象与售卖主体未完全锚定（可能为委托生产/品牌授权，属合理多解，需人工确认）"
+      }
+    ],
+    "pass_checks": [
+      {
+        "dimension": "numeric_match",
+        "note": "主张 99.999% 与报告数值一致；「75%酒精」落在 75%±5%（v/v）容差内——数值本身不误杀"
+      },
+      {
+        "dimension": "entity_match",
+        "note": "主图两瓶规格与净含量 500ml+100ml 视觉吻合"
+      },
+      {
+        "dimension": "time_match",
+        "note": "证号格式合规、检测日期在效期内；卫消证字证号有效性需外部核验（v1 无查询能力，不断言、不默认不通过）"
+      }
+    ],
+    "evidence_requests": [
+      {
+        "claim": "杀灭微生物含白色念珠菌",
+        "request": "覆盖白色念珠菌的第三方杀灭率检测报告（CMA/CNAS，样品=本商品）",
+        "deadline_condition": "整改期限内补齐或删除该参数项"
+      },
+      {
+        "claim": "检测报告主体适配",
+        "request": "委托单位康洁生物科技有限公司与店铺主体的品牌授权/委托生产关系证明",
+        "deadline_condition": "机器审核时核验"
+      },
+      {
+        "claim": "卫消证字（2023）第0456号有效性",
+        "request": "证书有效性外部核验（预留平台资质库查询位）",
+        "deadline_condition": "机器审核时核验"
+      }
+    ],
+    "appeal_evaluation": {
+      "recoup_possibility": "可补证翻案（REVIEW → 补齐后重判，可达 WARN/PASS）",
+      "appeal_suggestion": "复审（补证后再判）：优先提交白色念珠菌检测报告与主体关系说明，同步更新宣传图限定标注",
+      "evidence_supplement_list": "① 白色念珠菌杀灭率检测报告（CMA/CNAS，样品=本商品）② 康洁生物与净卫日化的品牌授权/委托生产证明 ③ 卫消证字（2023）第0456号有效性核验",
+      "rectification_parts_list": "图3大字「杀菌率99.999%」（补菌种+作用时间限定标注）；图3副标「广谱杀菌」（删除或改限定菌种表述）；SKU参数-杀灭微生物（移除白色念珠菌或补证）；详情页资质区（补主体关系证明）"
+    },
+    "skill2_invocation": {
+      "invoked": true,
+      "trigger": "conclusion=REVIEW ≠ PASS",
+      "checks": [
+        {
+          "item": "程序完整性",
+          "result": "通过",
+          "note": "结构化字段 + 3 图快照齐全，规则版本齐备"
+        },
+        {
+          "item": "最强反证",
+          "result": "可支持商家（部分）",
+          "note": "CMA 盖章第三方报告数值 99.999% 与核心主张一致，核心数值有 A 级证据，非虚构功效——但反证不消除范围/条件/主体问题"
+        },
+        {
+          "item": "可补证据",
+          "result": "可补",
+          "note": "白色念珠菌检测、主体关系证明、宣传图限定标注均可短期补齐"
+        },
+        {
+          "item": "争议空间",
+          "result": "存在→REVIEW",
+          "note": "旗舰店名与委托单位不一致在品牌授权/委托生产场景属合理多解，需人工仲裁而非模型定性"
+        },
+        {
+          "item": "不可挽回冲突",
+          "result": "未命中",
+          "note": "无数值/型号/证号互斥（99.999% 与报告一致，75% 在容差内）"
+        },
+        {
+          "item": "历史记录",
+          "result": "数据缺失",
+          "note": "v1 无商家历史申诉数据接入，不适用降级"
+        },
+        {
+          "item": "规则争议",
+          "result": "无",
+          "note": "所依据规则均为通用规则，无新政未同步情形"
+        }
+      ],
+      "verdict": "维持（REVIEW，转人工复审）",
+      "divergence": "无（与 skill1 初判一致）；「最强反证」项确认核心数值证据充分，人工清单收敛至 3 项"
+    }
+  },
+  "metadata": {
+    "category": "家居日用",
+    "difficulty": "边界",
+    "source": "线上回流",
+    "verification_point": "核心数值主张有 A 级证据时部分支持不误杀（区别于无证据功效 C03/C27）；「广谱」范围扩大+条件隐藏+参数超报告覆盖组合定档；委托主体不一致属合理多解 → REVIEW 转人工（区别于 C04 证书明确不成立→BLOCK、C28 D级证据→REVIEW）；补齐 REVIEW 路径 skill2 凭证锚点（现有 C29/C30 均为 BLOCK 路径）",
+    "annotators": [null, null],
+    "dispute": false
+  }
+},"C34":{
+  "board": "C34",
+  "id": "C34",
+  "dataset": "风险挑战集",
+  "dataset_cross_ref": "申诉翻转集（verdict=RECHECK 锚点）",
+  "mode": "normal",
+  "version_context": "cases.md v3.2 锚点：TOOL_ERROR→RECHECK 路径",
+  "input_summary": {
+    "category": "数码家电",
+    "title": "3C认证 20W PD快充充电器",
+    "images": ["图1 主图：充电器实拍（无证书图）"],
+    "structured_fields": ["型号 PD20W", "CCC 证书编号 2024010904123456（格式校验合规）", "输入 100-240V~50/60Hz", "输出 5V3A/9V2.22A/12V1.67A"],
+    "tool_state": "3.1 脚本侧资质检验器格式校验通过；3.3b 证据路由器调用 CCC 认证官方查询服务连续超时无返回（TOOL_ERROR）；商家未上传证书扫描件",
+    "shop": "玉溪数码产品"
+  },
+  "expected_output": {
+    "conclusion": "RECHECK",
+    "conclusion_note": "未决态，风险判断暂挂。重试恢复且证书有效对齐→按其余维度正常定档（预期 PASS/WARN）；重试不可恢复→REVIEW（人工线下核验，TOOL_ERROR 不处罚、不下 BLOCK）",
+    "business_action": "RECHECK",
+    "action_detail": "重新取数/重试 CCC 查询服务，不执行任何重处置；前端提示「超时了~请刷新一下」",
+    "hits": [
+      {
+        "content_layer": "资质/身份",
+        "dimension": "evidence_grade",
+        "reason_code": "TOOL_ERROR",
+        "region": "黄线区",
+        "severity": "未决",
+        "confidence": "未决",
+        "claim": "标题「3C认证」+ CCC 证书编号 2024010904123456",
+        "evidence": "强事实编码须经官方数据库校验；CCC 查询服务连续超时无返回；页内无证书扫描件",
+        "violation": "红线②：未查询到≠不存在。超时属系统侧故障，不得据超时判证号伪造/不成立，也不得默认通过"
+      }
+    ],
+    "pass_checks": [
+      {"dimension": "脚本侧格式校验", "note": "CCC 证书编号格式合规（3.1 资质检验器通过）；格式通过≠证书有效"}
+    ],
+    "evidence_requests": [],
+    "rectification_parts_list": "不适用（系统故障，不得向商家发补件要求；商家侧证书扫描件可作为人工核验辅助但不强制）",
+    "appeal_evaluation": {
+      "recoup_possibility": "未决态不产生申诉（商家侧无过错、无处置动作）",
+      "appeal_suggestion": "RECHECK（系统侧重试，非商家申诉）；重试不可恢复转 REVIEW 后按机器审核结果出具补证/放行结论",
+      "supplement_list": "不适用（系统故障）",
+      "rectification_parts": "不适用（无整改部件）"
+    },
+    "skill2_invocation": {
+      "mode": "normal",
+      "invoked": true,
+      "trigger": "3.3b 检索超时按 RECHECK 挂起，skill2 程序完整性检查介入",
+      "checks": [
+        {"item": "程序完整性", "result": "缺失→RECHECK", "note": "证据查询工具超时=系统侧故障，非商家材料问题：走 RECHECK 自愈重试；区别于商家未传字段→NEED_INPUT、C28 商家上传材料残缺→REVIEW；重试不可自动修复才转 REVIEW"},
+        {"item": "最强反证", "result": "不适用", "note": "工具未返回，无证据可反审；禁止把「查不到」当作「证号不存在」"},
+        {"item": "可补证据", "result": "不适用", "note": "非商家补件场景，责任在系统侧重试"},
+        {"item": "争议空间", "result": "—", "note": "未取得证据不进入争议判断"},
+        {"item": "不可挽回冲突", "result": "—", "note": "无证据不构成互斥"},
+        {"item": "历史记录", "result": "数据缺失", "note": "不适用降级"},
+        {"item": "规则争议", "result": "无", "note": "CCC 认证要求为现行强制规则"}
+      ],
+      "verdict": "RECHECK",
+      "verdict_detail": "重试 CCC 查询服务/重新取数；不可恢复→REVIEW 人工核验，TOOL_ERROR 全程不处罚",
+      "divergence": "程序完整性检查命中：系统工具故障禁止重处置（PRD 双 skill 合并表第 6 行：工具错误/快照错误→不执行重处置，重新取数或人工）"
+    }
+  },
+  "verification_point": "TOOL_ERROR→RECHECK 首个锚点：① 优先 RECHECK 重取数不处罚（区别于商家未传字段 NEED_INPUT 补件、C28 商家材料残缺 REVIEW）；② 红线②未查询到≠不存在，超时不得判 BLOCK 也不得默认 PASS；③ 重试不可恢复才转 REVIEW 人工核验；④ 前端 toast 与未决态报告留痕",
+  "annotator": "待双人标注"
+},"C35":{
+  "board": "C35",
+  "id": "C35",
+  "dataset": "风险挑战集",
+  "dataset_cross_ref": "申诉翻转集（mode=degraded 高影响 BLOCK 强制 REVIEW 锚点）",
+  "mode": "degraded",
+  "version_context": "cases.md v3.2 锚点：降级态高影响 BLOCK 候选强制转人工；与 DOWNGRADE（WARN 非高影响不触发）成对",
+  "report_header": "单重审查（skill1 不可用，skill2 独立审核，结论未经第二方交叉验证；高影响 BLOCK 候选已强制转人工）",
+  "degrade_trigger": "skill1 不可用（3.4 一致性校验器执行异常无输出），skill2 直接接收原始输入独立审核",
+  "input_summary": {
+    "category": "美妆个护",
+    "title": "医美级美白祛斑精华 国家专利 28天淡化色斑",
+    "images": [
+      "图1 主图：精华瓶实拍",
+      "图2 宣传图：超大字「祛斑率99% 医美级配方」，副标「药妆特护 敏感肌可用」",
+      "图3 检测报告（OCR 高置信：报告编号 HG20240512；委托单位「恒美生物科技有限公司」；样品「美白精华液」；人体功效评价；结论「28天受试者色斑面积平均减少32%，12例中9例有效」；CMA 章；报告共8页仅上传第1、5页）"
+    ],
+    "structured_fields": ["化妆品备案号 粤G妆网备字2024XXXXXX（格式合规未核验）", "净含量 30ml", "成分表：烟酰胺/熊果苷/传明酸…"],
+    "shop": "焕颜个护旗舰店"
+  },
+  "expected_output": {
+    "conclusion": "REVIEW",
+    "conclusion_note": "skill2 独立初判为 BLOCK 候选，按降级限制强制抬人工，单重审查不得直接 BLOCK",
+    "business_action": "HUMAN_REVIEW",
+    "action_detail": "强制人工复核，展示最小检查清单：完整报告/主体关系/特证",
+    "hits": [
+      {
+        "content_layer": "功效/性能",
+        "dimension": "numeric_match",
+        "reason_code": "NUMERIC_CONFLICT（嫌疑）",
+        "region": "黄线区（高影响）",
+        "severity": "高",
+        "confidence": "高",
+        "claim": "图2 大字「祛斑率99%」",
+        "evidence": "图3 报告结论为「色斑面积平均减少 32%，12 例中 9 例有效」",
+        "violation": "99% vs 32% 差距过大；但报告页码不全、主体关系未核，单重自审从严不坐实硬互斥"
+      },
+      {
+        "content_layer": "资质/身份",
+        "dimension": "entity_match",
+        "reason_code": "ENTITY_MISMATCH / POLICY_AMBIGUOUS（待人工仲裁）",
+        "region": "黄线区（高影响）",
+        "severity": "高",
+        "confidence": "中",
+        "claim": "报告委托单位「恒美生物科技有限公司」",
+        "evidence": "店铺主体为「焕颜个护旗舰店」，委托/授权关系无佐证",
+        "violation": "可能委托生产合理多解，也可能证据反向错配（C30 型），自审无法排除两种解释"
+      },
+      {
+        "content_layer": "证据可信度",
+        "dimension": "evidence_grade",
+        "reason_code": "EVIDENCE_INVALID（嫌疑）",
+        "region": "—",
+        "severity": "中",
+        "confidence": "高",
+        "claim": "图3 检测报告",
+        "evidence": "报告共 8 页仅上传第 1、5 页，关键页缺失",
+        "violation": "残缺报告有 D 级不可用风险"
+      },
+      {
+        "content_layer": "功效/性能",
+        "dimension": "interpretation",
+        "reason_code": "库内规则硬判（化妆品医疗化禁用宣称，不走原因码）",
+        "region": "红线区边缘",
+        "severity": "中",
+        "confidence": "高",
+        "claim": "「医美级」「药妆」",
+        "evidence": "化妆品监管明确禁用医疗化宣称",
+        "violation": "形式命中禁用词；本项并案审核，机器审核时一并认定处罚，不单独放行"
+      }
+    ],
+    "evidence_requests": [
+      {"claim": "完整检测报告", "request": "补齐全部 8 页（含受试者明细/测试条件/统计口径）", "deadline_condition": "机器审核时补齐"},
+      {"claim": "主体关系", "request": "恒美生物与焕颜个护的委托生产/品牌授权关系证明", "deadline_condition": "机器审核时补齐"},
+      {"claim": "特殊化妆品资质", "request": "祛斑类特殊化妆品注册证（美白祛斑属特证范畴）", "deadline_condition": "机器审核时核验"},
+      {"claim": "祛斑率99%", "request": "统计口径来源，或修正宣传与报告 32% 对齐", "deadline_condition": "整改/补证"}
+    ],
+    "rectification_parts_list": "图2大字「祛斑率99%」（修正至与证据对齐或补证）；图2「医美级」/「药妆」（禁用表述，删除）；图3检测报告（补齐全部页码）",
+    "appeal_evaluation": {
+      "recoup_possibility": "可补证翻案（REVIEW → 补齐后重判：证据坐实错配则 BLOCK，材料补齐对齐则 WARN/PASS）",
+      "appeal_suggestion": "复审（机器审核+补证后再判）",
+      "supplement_list": "① 完整 8 页检测报告 ② 委托/授权关系证明 ③ 祛斑类特殊化妆品注册证 ④ 99% 统计口径来源或修正宣传",
+      "rectification_parts": "同 rectification_parts_list"
+    },
+    "skill2_invocation": {
+      "mode": "degraded",
+      "invoked": true,
+      "trigger": "skill1 不可用原因=3.4 一致性校验器异常无输出；skill2 直接接收原始输入独立审核",
+      "self_review_note": "7 项为 skill2 独立审核后的自我复查（运动员兼裁判），非独立第二方审查",
+      "checks": [
+        {"item": "程序完整性", "result": "通过（独立审核自审）", "note": "3 图+全量字段在位；报告页码不全属商家材料问题非系统故障，不适用 RECHECK"},
+        {"item": "最强反证", "result": "部分支持商家（独立审核自审）", "note": "CMA 人体功效报告、32% 与淡斑方向一致，核心功效非虚构；但 99% vs 32% 差距大且主体/页码问题未解，反证不足翻案"},
+        {"item": "可补证据", "result": "可补（独立审核自审）", "note": "完整报告/主体关系证明/特证均可短期补齐"},
+        {"item": "争议空间", "result": "存在→人工（独立审核自审）", "note": "委托主体不一致在代工场景属合理多解，自审无法排除报告错配与委托生产两种解释"},
+        {"item": "不可挽回冲突", "result": "未命中（自审从严存疑）", "note": "99% vs 32% 差距大但报告残页、主体未核，不能排除另一份有效报告/口径换算的解释空间；双审查正常模式可交叉核实，单重自审不坐实硬互斥"},
+        {"item": "历史记录", "result": "数据部分缺失（独立审核自审）", "note": "店铺历史申诉/资损数据未提供"},
+        {"item": "规则争议", "result": "无（独立审核自审）", "note": "美白祛斑属特殊化妆品、医美级/药妆禁用为现行规则"}
+      ],
+      "degraded_constraint_check": "触发：独立初判 BLOCK 候选，属医疗/资质类高影响（祛斑特证功效+医疗化宣称），结论依赖证据推理（数值比对+主体关系+报告完整性综合判断，非站外引流/同页互斥类形式硬判）→ 强制抬 REVIEW，不允许单重审查直接 BLOCK；医美级/药妆禁用词随全案抬人工一并认定，不单独放行",
+      "verdict": "复审（强制 HUMAN_REVIEW）",
+      "divergence": "skill1 缺位，skill2 独立初判 BLOCK 候选 → 依降级限制规则改判 REVIEW（正常双审查模式下若证据反向错配坐实可维持 BLOCK，降级保守抬人工）"
+    }
+  },
+  "verification_point": "降级状态高影响 BLOCK 强制转人工首个锚点（mode=degraded 触发路径），与 DOWNGRADE（WARN 非高影响不触发）成对：① 独立初判 BLOCK 候选但属医疗/资质类高影响且依赖证据推理→强制 REVIEW；② 单重自审对不可挽回冲突从严存疑；③ 形式硬判项（医美级/药妆）随全案抬人工一并认定；④ 人工清单收敛证据缺口",
+  "annotator": "待双人标注"
+},"NORMAL":{
+  "id": "NORMAL",
+  "dataset": "风险挑战集",
+  "dataset_cross_ref": "申诉翻转集（skill2 正常态凭证 mode=normal 锚点）",
+  "mode": "normal",
+  "version_context": "v2.0 新增；PRD V1.3 锚点；食品营养标签语境误导 WARN 路径；skill2 正常状态凭证锚点（mode=normal）；与 DOWNGRADE（降级状态）同输入对照；v3.1 对齐 cases.md 回填：业务动作 REQUEST_EDIT + reason_code + claim region（2026-09-07）",
+  "input": {
+    "category": "食品保健",
+    "title": "美味大饼干童年记忆曲奇",
+    "merchant_claims": [
+      "无蔗糖 轻负担",
+      "粗粮膳食纤维 无负担零食"
+    ],
+    "merchant_background": "商家历史经济收益不高（申诉率数据未提供）",
+    "sku_attributes": {
+      "配料表": "小麦粉、麦芽糖浆、食用植物油、燕麦粉、碳酸氢钠、食用盐",
+      "营养成分表": "每100g：糖12g、膳食纤维5.1g、钠420mg",
+      "产品标准": "GB/T 20980",
+      "生产许可证": "SC12444030400003",
+      "净含量": "400g",
+      "保质期": "9个月",
+      "店铺": "麦轻说食品专营店"
+    },
+    "images": [
+      {
+        "locator": "图1",
+        "type": "main_image",
+        "source": "真实图片",
+        "description": "主图：透明自封袋装方形带扎孔饼干（梳打/韧性饼干形态）堆叠实拍，旁置麦穗装饰；包装无文案文字"
+      },
+      {
+        "locator": "图2",
+        "type": "promo_image",
+        "source": "真实图片",
+        "description": "宣传图：米黄底色，超大字「无蔗糖 轻负担」，下方副标「粗粮膳食纤维 无负担零食」，配燕麦穗/麦粒元素；未标注含糖量或麦芽糖浆提示"
+      }
+    ]
+  },
+  "expected_output": {
+    "conclusion": "WARN",
+    "business_action": "REQUEST_EDIT",
+    "action_detail": "最小整改后放行（糖含量/粗粮表述修正；整改措辞建议收敛为「未添加蔗糖+含糖提示」而非简单删除，避免商家二次整改）",
+    "conclusion_rationale": "核心断裂为图2醒目大字「无蔗糖 轻负担」：配料表虽无蔗糖但含麦芽糖浆（添加糖），营养成分表含糖12g/100g，远超GB 28050无糖≤0.5g/低糖≤5g阈值，普通消费者将「无蔗糖」理解为无糖/低糖健康食品，构成 interpretation+scope 断裂（黄线区，reason_code=SCOPE_EXPANSION）；证据为商品自身营养标签（高置信），但「无蔗糖」字面层有配料表支持、非证号/型号类不可挽回硬冲突，按「interpretation类冲突+有字面解释空间→WARN」及宁可WARN不误伤原则定档；次断裂为「粗粮」暗示与配料排序（小麦粉第一、燕麦粉第四）不符（ENTITY_MISMATCH，中severity）。均为整改文案可修正项，REQUEST_EDIT 最小整改后放行。",
+    "hits": [
+      {
+        "content_layer": "成分/营养标签",
+        "dimension": "interpretation",
+        "reason_code": "SCOPE_EXPANSION",
+        "region": "黄线区",
+        "severity": "高",
+        "confidence": "高",
+        "claim": "图2大字「无蔗糖 轻负担」",
+        "evidence": "配料表含麦芽糖浆（添加糖，非蔗糖但含糖）；营养成分表每100g含糖12g，远超GB 28050「无糖」≤0.5g/100g、「低糖」≤5g/100g阈值；页面未标注「本品含麦芽糖浆/含糖」",
+        "violation": "醒目大字使普通消费者理解为无糖/低糖健康食品，实际为中高糖食品；「轻负担」修辞强化该误导"
+      },
+      {
+        "content_layer": "成分/营养标签",
+        "dimension": "scope_match",
+        "reason_code": "SCOPE_EXPANSION",
+        "region": "黄线区",
+        "severity": "高",
+        "confidence": "高",
+        "claim": "无蔗糖",
+        "evidence": "配料表确无蔗糖/白砂糖，但「无蔗糖」仅指未添加蔗糖这一单一事实，宣传未作任何限定标注",
+        "violation": "单一成分缺席（无蔗糖）被扩大为整体无糖/低糖印象，范围扩大"
+      },
+      {
+        "content_layer": "成分/营养标签",
+        "dimension": "entity_match",
+        "reason_code": "ENTITY_MISMATCH",
+        "region": "黄线区",
+        "severity": "中",
+        "confidence": "高",
+        "claim": "粗粮膳食纤维（图2副标）",
+        "evidence": "配料表排序：小麦粉第一（精制粉）、燕麦粉第四；膳食纤维5.1g/100g达「含有」阈值（≥3g/100g）但未达「高/富含」阈值（≥6g/100g）",
+        "violation": "主料为精制小麦粉，「粗粮」为主的暗示与配料排序不符；纤维含量不支撑高纤维暗示"
+      },
+      {
+        "content_layer": "参数/规格",
+        "dimension": "entity_match",
+        "reason_code": "—（提示项，不定档）",
+        "region": "—",
+        "severity": "低",
+        "confidence": "中",
+        "claim": "品名「曲奇」",
+        "evidence": "图1主图实物为方形带扎孔的梳打/韧性饼干形态，曲奇通常为酥性花纹饼干；GB/T 20980为饼干通则涵盖各类",
+        "violation": "品名与实物形态存在观感差异（标准层面不违规），提示核实品名表述"
+      }
+    ],
+    "pass_checks": [
+      {
+        "dimension": "numeric_match",
+        "note": "膳食纤维5.1g/100g ≥ 3g/100g，「含膳食纤维」声称有营养标签支持（但不支撑「高/富含」）"
+      },
+      {
+        "dimension": "time_match",
+        "note": "SC证号格式合规（SC+14位）、GB/T 20980为现行饼干标准；证号有效性需外部核验，v1无查询能力，不断言、不默认不通过"
+      },
+      {
+        "dimension": "entity_match",
+        "note": "净含量400g袋装与图1包装形态吻合；钠420mg/100g无低钠声称，不判"
+      }
+    ],
+    "evidence_requests": [
+      {
+        "claim": "SC12444030400003 证号有效性",
+        "request": "生产许可证外部核验（预留平台资质库查询位）",
+        "deadline_condition": "机器审核时核验"
+      }
+    ],
+    "appeal_evaluation": {
+      "recoup_possibility": "不可补证翻案（糖12g/100g为营养标签事实，无法靠补证改变）；整改文案后重判可达PASS",
+      "appeal_suggestion": "整改：按合规标注方式标注含糖事实，无需补证",
+      "evidence_supplement_list": "无补证空间（标签事实不可改变）；整改项：图2「无蔗糖」改为「未添加蔗糖，本品含麦芽糖浆（每100g含糖12g）」或删除；「轻负担/无负担零食」弱化或同步标注糖含量；「粗粮」改为「添加燕麦粉」类与配料排序对齐的表述",
+      "rectification_parts_list": "图2大字「无蔗糖」（删除或改「未添加蔗糖+含糖提示」）；图2「轻负担」/副标「无负担零食」（弱化或标糖含量）；图2副标「粗粮膳食纤维」（「粗粮」改「添加燕麦粉」类表述）；标题「曲奇」（核实是否与实物形态一致）"
+    },
+    "skill2_invocation": {
+      "mode": "normal",
+      "invoked": true,
+      "trigger": "conclusion=WARN ≠ PASS",
+      "checks": [
+        {
+          "item": "程序完整性",
+          "result": "通过",
+          "note": "2图快照+全量结构化字段（配料/营养标签/证号）齐全，规则版本齐备"
+        },
+        {
+          "item": "最强反证",
+          "result": "部分支持商家",
+          "note": "配料表确无蔗糖/白砂糖，「无蔗糖」字面层有配料表支持；但麦芽糖浆+糖12g/100g不消除语境误导，反证不足以翻案"
+        },
+        {
+          "item": "可补证据",
+          "result": "不适用（补证翻案）",
+          "note": "营养标签为商品自身事实，糖12g无法通过补证改变；仅可整改文案，非补证项"
+        },
+        {
+          "item": "争议空间",
+          "result": "部分存在，不升级",
+          "note": "「无蔗糖」字面文义 vs 整体语境误导存在解释空间（行业有「未添加蔗糖+同步标注含糖」的合规标注先例），但C端理解方向明确、整改义务清晰，人工仲裁不改变动作，不抬REVIEW"
+        },
+        {
+          "item": "不可挽回冲突",
+          "result": "未命中",
+          "note": "非证号/型号/数值硬互斥，「无蔗糖」字面留有解释缝，异于站外引流/同页互斥硬判"
+        },
+        {
+          "item": "历史记录",
+          "result": "数据部分缺失",
+          "note": "商家经济收益低（拦截资损小，不触发降级WARN的资损逻辑）；申诉率数据未提供/v1无历史接入，不触发REVIEW加急"
+        },
+        {
+          "item": "规则争议",
+          "result": "无",
+          "note": "GB 28050营养标签声称要求为现行通用规则，无新政未同步情形"
+        }
+      ],
+      "verdict": "维持（WARN，REQUEST_EDIT 最小整改后放行）",
+      "divergence": "无（与skill1初判一致）；「最强反证」项确认字面层抗辩成立，整改措辞建议收敛为「未添加蔗糖+含糖提示」而非简单删除，避免商家二次整改"
+    }
+  },
+  "metadata": {
+    "category": "食品保健",
+    "difficulty": "边界",
+    "source": "合成对抗",
+    "verification_point": "食品营养标签语境误导锚点：「无蔗糖」字面层有配料表支持（确无蔗糖）但麦芽糖浆+糖12g/100g远超GB 28050无糖/低糖阈值，醒目大字+「轻负担」构成 interpretation+scope 断裂（SCOPE_EXPANSION，黄线区）→ WARN 不 BLOCK（字面有解释缝、非不可挽回硬冲突，区别于 C05/C29 同页数值互斥型 BLOCK）；「粗粮」暗示与配料排序（小麦粉第一）不符（ENTITY_MISMATCH）；业务动作 REQUEST_EDIT 最小整改；skill2 正常状态凭证（mode=normal）——最强反证项确认字面抗辩但不翻案；与 DOWNGRADE 降级状态同输入对照",
+    "annotators": [null, null],
+    "dispute": false
+  }
+},"DOWNGRADE":{
+  "id": "DOWNGRADE",
+  "dataset": "风险挑战集",
+  "dataset_cross_ref": "申诉翻转集（skill2 降级态凭证 mode=degraded 锚点；非高影响不触发强制转人工，与 C35 高影响触发路径成对）",
+  "mode": "degraded",
+  "version_context": "v2.0 新增；PRD V1.3 锚点；skill2 降级状态首个锚点（mode=degraded）：skill1 失效时 skill2 独立执行 3.1→3.5 全流程+7 项自审；与 NORMAL（正常状态）同输入对照，验证降级链路结论收敛；v3.1 对齐 cases.md 回填：业务动作 REQUEST_EDIT + reason_code + claim region；v3.2 交叉引用 C35（降级态高影响 BLOCK 强制 REVIEW 触发路径已由 C35 锚定，2026-09-07）",
+  "degrade_trigger": "skill1 执行失败（设定：3.1 页面解析器超时无返回），skill2 直接接收原始输入独立审核",
+  "report_header": "单重审查（skill1 不可用，skill2 独立审核，结论未经第二方交叉验证；高影响 BLOCK 候选已强制转人工）",
+  "input": {
+    "category": "食品保健",
+    "title": "美味大饼干童年记忆曲奇",
+    "merchant_claims": [
+      "无蔗糖 轻负担",
+      "粗粮膳食纤维 无负担零食"
+    ],
+    "merchant_background": "商家历史经济收益不高（申诉率数据未提供）",
+    "sku_attributes": {
+      "配料表": "小麦粉、麦芽糖浆、食用植物油、燕麦粉、碳酸氢钠、食用盐",
+      "营养成分表": "每100g：糖12g、膳食纤维5.1g、钠420mg",
+      "产品标准": "GB/T 20980",
+      "生产许可证": "SC12444030400003",
+      "净含量": "400g",
+      "保质期": "9个月",
+      "店铺": "麦轻说食品专营店"
+    },
+    "images": [
+      {
+        "locator": "图1",
+        "type": "main_image",
+        "source": "真实图片",
+        "description": "主图：透明自封袋装方形带扎孔饼干（梳打/韧性饼干形态）堆叠实拍，旁置麦穗装饰；包装无文案文字"
+      },
+      {
+        "locator": "图2",
+        "type": "promo_image",
+        "source": "真实图片",
+        "description": "宣传图：米黄底色，超大字「无蔗糖 轻负担」，下方副标「粗粮膳食纤维 无负担零食」，配燕麦穗/麦粒元素；未标注含糖量或麦芽糖浆提示"
+      }
+    ]
+  },
+  "expected_output": {
+    "conclusion": "WARN",
+    "business_action": "REQUEST_EDIT",
+    "action_detail": "最小整改后放行（糖含量/粗粮表述修正，整改部件同 NORMAL）；单重审查结论建议机器抽检复核（降级模式无第二方交叉验证）",
+    "conclusion_rationale": "skill2 降级状态独立执行 3.1→3.5 全流程：解析2图+结构化字段→原子化主张→商品内证据互证→八维度校验→风险决策。断裂事实与 NORMAL 一致：「无蔗糖 轻负担」与麦芽糖浆+糖12g/100g 构成 interpretation+scope 断裂（黄线区，reason_code=SCOPE_EXPANSION，高severity/高置信），「粗粮」暗示与配料排序不符（ENTITY_MISMATCH，中severity）。独立初判 WARN：证据为商品自身标签、事实清楚，且字面有解释缝、非不可挽回硬冲突。降级限制核验：本案为食品营养标签误导，结论 WARN 非 BLOCK，且不属医疗/资质/安全类高影响 BLOCK 候选（无毒害/资质问题、无人身安全风险），不触发「降级状态高影响 BLOCK 一律抬 REVIEW」规则，skill2 可直接出 WARN（REQUEST_EDIT 整改后放行）；无站外引流/同页互斥/红线区断言等硬判项。降级触发路径对照见 C35（高影响 BLOCK 候选强制 REVIEW）。",
+    "hits": [
+      {
+        "content_layer": "成分/营养标签",
+        "dimension": "interpretation",
+        "reason_code": "SCOPE_EXPANSION",
+        "region": "黄线区",
+        "severity": "高",
+        "confidence": "高",
+        "claim": "图2大字「无蔗糖 轻负担」",
+        "evidence": "配料表含麦芽糖浆（添加糖）；营养成分表每100g含糖12g，远超GB 28050无糖≤0.5g/低糖≤5g阈值；未标注含糖提示",
+        "violation": "醒目大字使消费者理解为无糖/低糖健康食品，实际为中高糖"
+      },
+      {
+        "content_layer": "成分/营养标签",
+        "dimension": "scope_match",
+        "reason_code": "SCOPE_EXPANSION",
+        "region": "黄线区",
+        "severity": "高",
+        "confidence": "高",
+        "claim": "无蔗糖",
+        "evidence": "仅指未添加蔗糖，含麦芽糖浆未作限定标注",
+        "violation": "单一成分缺席被扩大为整体无糖印象"
+      },
+      {
+        "content_layer": "成分/营养标签",
+        "dimension": "entity_match",
+        "reason_code": "ENTITY_MISMATCH",
+        "region": "黄线区",
+        "severity": "中",
+        "confidence": "高",
+        "claim": "粗粮膳食纤维",
+        "evidence": "小麦粉第一、燕麦粉第四；膳食纤维5.1g/100g达「含有」未达「高/富含」",
+        "violation": "粗粮为主暗示与配料排序不符"
+      },
+      {
+        "content_layer": "参数/规格",
+        "dimension": "entity_match",
+        "reason_code": "—（提示项，不定档）",
+        "region": "—",
+        "severity": "低",
+        "confidence": "中",
+        "claim": "品名「曲奇」",
+        "evidence": "图1为方形带孔梳打饼干形态",
+        "violation": "品名与实物形态观感差异，提示核实"
+      }
+    ],
+    "pass_checks": [
+      {
+        "dimension": "numeric_match",
+        "note": "膳食纤维5.1g/100g支撑「含膳食纤维」声称"
+      },
+      {
+        "dimension": "time_match",
+        "note": "SC证号格式合规、GB/T 20980现行；证号有效性需外部核验，不断言"
+      },
+      {
+        "dimension": "entity_match",
+        "note": "400g袋装与图1吻合；钠420mg无低钠声称不判"
+      }
+    ],
+    "evidence_requests": [
+      {
+        "claim": "SC12444030400003 证号有效性",
+        "request": "生产许可证外部核验（预留平台资质库查询位）",
+        "deadline_condition": "机器审核时核验"
+      }
+    ],
+    "appeal_evaluation": {
+      "recoup_possibility": "不可补证翻案（糖12g/100g为标签事实）；整改文案后重判可达PASS",
+      "appeal_suggestion": "整改标注含糖事实；单重审查结论建议机器抽检复核（降级模式无第二方交叉验证）",
+      "evidence_supplement_list": "无补证空间（标签事实不可改变）；整改项同 NORMAL：图2「无蔗糖」改「未添加蔗糖，本品含麦芽糖浆（每100g含糖12g）」或删除；「轻负担/无负担」弱化或标糖含量；「粗粮」改「添加燕麦粉」类表述",
+      "rectification_parts_list": "图2大字「无蔗糖」（删除或改「未添加蔗糖+含糖提示」）；图2「轻负担」/副标「无负担零食」（弱化或标糖含量）；图2副标「粗粮膳食纤维」（「粗粮」改「添加燕麦粉」类表述）；标题「曲奇」（核实是否与实物形态一致）"
+    },
+    "skill2_invocation": {
+      "mode": "degraded",
+      "invoked": true,
+      "trigger": "skill1不可用原因=3.1页面解析器执行超时无返回；skill2直接接收原始输入独立审核",
+      "self_review_note": "以下7项为skill2独立审核后的自我复查（运动员兼裁判），非独立第二方审查；逐项标注「独立审核自审」",
+      "checks": [
+        {
+          "item": "程序完整性",
+          "result": "通过（独立审核自审）",
+          "note": "自审收到2图+全量结构化字段，输入完整可审；但无法客观验证自身流程遗漏，建议人工抽检"
+        },
+        {
+          "item": "最强反证",
+          "result": "部分支持商家（独立审核自审）",
+          "note": "自查切换商家立场：配料表确无蔗糖，字面抗辩成立；但糖12g+麦芽糖浆不消除误导，维持断裂判断"
+        },
+        {
+          "item": "可补证据",
+          "result": "不适用（独立审核自审）",
+          "note": "糖12g为标签事实不可补证，整改文案路径"
+        },
+        {
+          "item": "争议空间",
+          "result": "部分存在，不升级（独立审核自审）",
+          "note": "文义解释空间存在但C端理解明确、整改义务清晰；单重审查下对争议项本应更保守，但该项不改变处置动作（WARN/REQUEST_EDIT 整改），维持不抬REVIEW"
+        },
+        {
+          "item": "不可挽回冲突",
+          "result": "未命中（独立审核自审）",
+          "note": "非硬互斥，字面留有解释缝"
+        },
+        {
+          "item": "历史记录",
+          "result": "数据部分缺失（独立审核自审）",
+          "note": "经济收益低、申诉率缺失，不触发降级/加急分支"
+        },
+        {
+          "item": "规则争议",
+          "result": "无（独立审核自审）",
+          "note": "GB 28050为现行通用规则"
+        }
+      ],
+      "degraded_constraint_check": "降级限制已核验：本案结论WARN非BLOCK（业务动作为 REQUEST_EDIT 整改放行）；食品营养标签误导不属医疗/资质/安全类高影响BLOCK候选，不触发「降级状态高影响BLOCK一律抬REVIEW」规则；无站外引流/同页互斥/红线区断言等硬判项。触发路径对照：C35（美妆祛斑精华，独立初判 BLOCK 候选+医疗/资质类高影响+依赖证据推理→强制 REVIEW）",
+      "verdict": "维持（skill2独立初判WARN，自审维持；REQUEST_EDIT 最小整改后放行，建议人工抽检兜底）",
+      "divergence": "skill1缺位，skill2独立结论；与 NORMAL 正常模式结论一致（WARN），但本结论仅经单重审查，建议人工抽检兜底"
+    }
+  },
+  "metadata": {
+    "category": "食品保健",
+    "difficulty": "边界",
+    "source": "合成对抗",
+    "verification_point": "skill2 降级状态首个锚点（mode=degraded）：skill1 失效时 skill2 直接吃原始输入自行执行 3.1→3.5 全流程+7 项自审逐项留痕，报告头打单重审查标记，divergence 填「skill1缺位，skill2独立结论」；同输入与 NORMAL 正常模式结论收敛（WARN/REQUEST_EDIT 一致）验证降级链路可用；降级限制核验锚点——WARN 非 BLOCK 且非医疗/资质/安全类高影响候选，不触发强制转人工（高影响 BLOCK 候选强制 REVIEW 的触发路径由 C35 锚定：美妆祛斑精华 99% vs 32%+主体不一致+残页报告，独立初判 BLOCK 候选→强制 REVIEW）",
+    "annotators": [null, null],
+    "dispute": false
+  }
+}};/* ================= 常量表 ================= */
+const CASE_ORDER = ['C31','C34','C35','NORMAL','DOWNGRADE'];
+/* 原型示意时间：金标用例不含时间字段，此处为还原参考图展示效果而写死的演示值，页面已标注「原型示意」 */
+const DEMO_TS = { submit:'2026-10-03 14:20', machine:'2026-10-03 14:22', manual:'2026-10-03 15:05' };
+const DEMO_CD = { d:'2', h:'13', pct:38 };
+/* 商家侧状态文案：把内部档位翻译成商家语言；内部档位仍在结论卡右上角保留 */
+const M_STATUS = {
+  PASS:    {t:'已通过',    tone:'pass',    d:'商品信息已通过一致性校验，可正常上架，无需处理。'},
+  WARN:    {t:'建议修改',  tone:'warn',    d:'发现少量不一致内容，风险较低，请按下列清单完成修改后重新提交。'},
+  REVIEW:  {t:'待你处理',  tone:'review',  d:'部分内容需修改或补充材料，处理完成后由平台机器审核。'},
+  BLOCK:   {t:'不予上架',  tone:'block',   d:'发现明确的不一致内容，需整改后重新提交。'},
+  RECHECK: {t:'系统核对中',tone:'recheck', d:'系统查询服务暂时未返回结果，平台正在自动重试。你无需进行任何操作，也不会因系统故障受到处罚。'}
+};
+const ACTION_LABEL = {
+  ALLOW:'放行', REQUEST_EDIT:'最小整改', HUMAN_REVIEW:'转机器审核',
+  BLOCK_CANDIDATE:'拦截候选（人工确认）', RECHECK:'重新取数'
+};
+/* 商家侧「核对项」名称：用于「为什么这样判定」的已核对项，不使用内部维度术语 */
+const DIM_LABEL = {
+  claim_match:'宣传主张', entity_match:'材料主体', time_match:'时间信息', scope_match:'适用范围',
+  condition_match:'前提条件', numeric_match:'数值信息', evidence_grade:'材料佐证', interpretation:'表述方式',
+  '脚本侧格式校验':'格式校验'
+};
+/* 商家侧差异原因：把内部差异维度翻译成规范、可执行的表述（不使用内部术语，也不口语化） */
+const HIT_TITLE = {
+  scope_match:'商品描述超出材料证明范围',
+  condition_match:'缺少必要前提条件',
+  evidence_grade:'缺少佐证材料',
+  interpretation:'表述存在歧义，易产生误解',
+  entity_match:'材料对应主体与商品不一致',
+  numeric_match:'数值信息不一致',
+  time_match:'时间信息不一致'
+};
+const SEV_PLAIN = { '高':'影响较大', '中':'影响一般', '低':'影响较小', '未决':'影响待确认' };
+const IMG_TYPE_LABEL = {
+  main_image:'主图', promo_image:'宣传图', report:'检测报告',
+  detail_page:'详情页', certificate:'资质证书'
+};
+
+/* 商家侧文案净化：金标原文里会夹带内部字段名（evidence_requests 等）、原因码、
+   档位码（REVIEW/WARN/PASS/BLOCK/RECHECK）与内部流程术语（skill / 单重审查 / 3.1 检验器…），
+   这些商家看不懂。这一层只做展示替换，不改内嵌金标数据，避免页面与 eval/ 金标口径分叉。
+   顺序敏感：先长串再短串，先整句再单词，否则长串会被短串规则切断。 */
+const MZ_TERMS = [
+  /* ① 内部字段名 */
+  [/（\s*MISSING\s*[，,]\s*对应\s*evidence_requests\s*）/g, '（该项暂无对应材料，需补充）'],
+  [/（\s*MISSING\s*）/g, '（该项暂无对应材料）'],
+  [/\brectification_parts_list\b/g, '需修改的内容'],
+  [/\bevidence_requests\b/g, '需补充的材料'],
+  [/\bMISSING\b/g, '该项暂无对应材料'],
+  /* ② 内部流程 / 模块 / 分级术语（整句优先） */
+  [/红线②：未查询到≠不存在。超时属系统侧故障，不得据超时判证号伪造\/不成立，也不得默认通过/g,
+   '本次未查询到该证书编号，但这只说明查询服务未返回结果，不代表证书不存在；超时属系统原因，不会据此认定证书编号不成立，也不会直接放行'],
+  [/不可补证翻案（[^）]*）[；;]?\s*/g, '无法通过补证改正；'],
+  [/可补证翻案（[^）]*）/g, '可补证改正：补齐材料后可重新判定'],
+  [/整改文案后重判可达\s*PASS/g, '按规范修改文案后可重新判定为通过'],
+  [/未决态不产生申诉/g, '本次不产生申诉'],
+  [/RECHECK（系统侧重试，非商家申诉）[；;]?\s*/g, '平台将自动重试，无需你申诉；'],
+  [/重试不可恢复转\s*REVIEW\s*后按机器审核结果出具补证\/放行结论/g,
+   '若重试仍无结果，将由平台按其审核结果给出补证或放行结论'],
+  [/单重审查结论建议机器抽检复核（降级模式无第二方交叉验证）/g, '本结论建议由平台抽检复核'],
+  [/单重自审从严不坐实硬互斥/g, '本次审核从严，暂不认定为明确冲突'],
+  [/自审无法排除两种解释/g, '本次审核无法排除这两种可能'],
+  [/（C30\s*型）/g, ''],
+  [/有\s*D\s*级不可用风险/g, '可能无法作为有效材料'],
+  [/本项并案审核，机器审核时一并认定处罚，不单独放行/g, '本项与其他问题一并审核，不会单独放行'],
+  [/强事实编码/g, '证书编号'],
+  [/3\.1\s*资质检验器通过/g, '格式校验通过'],
+  [/外部核验（预留平台资质库查询位）/g, '由平台侧核验'],
+  [/预留平台资质库查询位/g, '由平台侧核验'],
+  [/v1\s*无查询能力[，,]\s*不断言[、，,]?\s*不默认不通过/g, '本次审核不下结论'],
+  [/v1\s*无查询能力[，,]?\s*不断言/g, '本次审核不下结论'],
+  [/[，,]\s*不断言/g, ''],
+  [/属合理多解，需人工确认/g, '属合理情形，需平台进一步核实'],
+  [/需外部核验/g, '需由平台核验'],
+  /* ③ 档位码兜底（剩余的裸档位码一律转成商家语言） */
+  [/\bBLOCK_CANDIDATE\b/g, '拦截候选'],
+  [/\bREVIEW\b/g, '待处理'],
+  [/\bWARN\b/g, '建议修改'],
+  [/\bPASS\b/g, '已通过'],
+  [/\bBLOCK\b/g, '不予上架'],
+  [/\bRECHECK\b/g, '系统核对中']
+];
+function mzText(s){
+  let t = String(s === undefined || s === null ? '' : s);
+  if (!t) return '';
+  for (let i=0;i<MZ_TERMS.length;i++) t = t.replace(MZ_TERMS[i][0], MZ_TERMS[i][1]);
+  return t;
+}
+/* 原型演示用的商品编号：由标题+店铺派生，同一商品（NORMAL/DOWNGRADE 同输入）编号一致。
+   内嵌金标里的用例 ID（C31 / NORMAL / DOWNGRADE…）属内部标识，不向商家展示。 */
+function mzPid(c){
+  const t = String((c && c.input && c.input.title) || '') + String((c && c.input && c.input.shop) || '');
+  let h = 7;
+  for (let i=0;i<t.length;i++) h = (h * 31 + t.charCodeAt(i)) % 89999999;
+  return 'SP' + String(10000000 + h);
+}
+
+/* ================= 工具函数 ================= */
+function esc(s){
+  return String(s === undefined || s === null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+/* 步骤条用紧凑时间（去掉年份） */
+function shortTs(s){ return String(s || '').replace(/^\d{4}-/, ''); }
+function firstDefined(){
+  for (let i=0;i<arguments.length;i++){
+    const v = arguments[i];
+    if (v !== undefined && v !== null && v !== '') return v;
+  }
+  return '';
+}
+function sevClass(s){
+  if (s === '高') return 'high';
+  if (s === '中') return 'mid';
+  if (s === '低') return 'low';
+  return 'na';
+}
+function splitKV(str){
+  const marks = [' ','：',':'];
+  for (let i=0;i<marks.length;i++){
+    const idx = str.indexOf(marks[i]);
+    if (idx > 0) return {k:str.slice(0,idx), v:str.slice(idx+1)};
+  }
+  return {k:'—', v:str};
+}
+
+/* ================= 归一化（与「审核工作台」同一套字段别名映射） ================= */
+function normalize(raw){
+  const inp = raw.input || raw.input_summary || {};
+  const out = raw.expected_output || {};
+  const meta = raw.metadata || {};
+  const appealRaw = out.appeal_evaluation || {};
+  const sk2Raw = out.skill2_invocation || {};
+
+  let images = [];
+  if (Array.isArray(inp.images)){
+    images = inp.images.map(function(it){
+      if (typeof it === 'string'){
+        const m = it.match(/^(图\s*\d+)\s*[:：]?\s*(.*)$/);
+        return {locator:m?m[1]:'', type:'', source:'', description:mzText(m?m[2]:it)};
+      }
+      return {locator:it.locator||'', type:it.type||'', source:it.source||'', description:mzText(it.description||'')};
+    });
+  }
+
+  let skuAttributes = [];
+  if (inp.sku_attributes && typeof inp.sku_attributes === 'object' && !Array.isArray(inp.sku_attributes)){
+    skuAttributes = Object.keys(inp.sku_attributes).map(function(k){ return {k:k, v:mzText(inp.sku_attributes[k])}; });
+  } else if (Array.isArray(inp.structured_fields)){
+    skuAttributes = inp.structured_fields.map(function(s){
+      const kv = splitKV(s);
+      return {k:kv.k, v:mzText(kv.v)};
+    });
+  }
+
+  return {
+    id: raw.id || raw.board || '',
+    mode: raw.mode || 'normal',
+    reportHeader: raw.report_header || '',
+    degradeTrigger: raw.degrade_trigger || '',
+    versionContext: raw.version_context || '',
+    input: {
+      category: mzText(inp.category || ''),
+      title: mzText(inp.title || ''),
+      shop: mzText(firstDefined(inp.shop, (inp.sku_attributes && inp.sku_attributes['店铺']) || '', '')),
+      merchantBackground: inp.merchant_background || '',
+      merchantClaims: (Array.isArray(inp.merchant_claims) ? inp.merchant_claims : []).map(function(x){ return mzText(x); }),
+      skuAttributes: skuAttributes,
+      images: images
+    },
+    output: {
+      conclusion: out.conclusion || '',
+      conclusionNote: out.conclusion_note || '',
+      businessAction: out.business_action || '',
+      actionDetail: out.action_detail || '',
+      rationale: out.conclusion_rationale || '',
+      hits: (Array.isArray(out.hits) ? out.hits : []).map(function(h){
+        return {
+          content_layer: h.content_layer || '',
+          dimension: h.dimension || '',
+          reason_code: h.reason_code || '',
+          severity: h.severity || '',
+          claim: mzText(h.claim),
+          evidence: mzText(h.evidence),
+          violation: mzText(h.violation)
+        };
+      }),
+      passChecks: (Array.isArray(out.pass_checks) ? out.pass_checks : []).map(function(p){
+        return {dimension: p.dimension || '', note: mzText(p.note)};
+      }),
+      evidenceRequests: (Array.isArray(out.evidence_requests) ? out.evidence_requests : []).map(function(e){
+        return {claim: mzText(e.claim), request: mzText(e.request), deadline_condition: mzText(e.deadline_condition)};
+      }),
+      appeal: {
+        recoup: mzText(appealRaw.recoup_possibility || ''),
+        suggestion: mzText(appealRaw.appeal_suggestion || ''),
+        supplementList: firstDefined(appealRaw.evidence_supplement_list, appealRaw.supplement_list),
+        rectificationParts: mzText(firstDefined(
+          appealRaw.rectification_parts_list, out.rectification_parts_list, appealRaw.rectification_parts
+        ))
+      },
+      skill2: {
+        mode: sk2Raw.mode || '',
+        invoked: !!sk2Raw.invoked,
+        verdict: sk2Raw.verdict || '',
+        divergence: sk2Raw.divergence || ''
+      }
+    }
+  };
+}
+
+/* ================= 待办项：从「整改部件清单」拆解 ================= */
+/* 位置徽标仅从原文前缀提取（图3 / 标题 / SKU参数…），不补充 JSON 里没有的信息 */
+const LOC_RE = /^(图\s*\d+\s*[^\s，,（(「]{0,8}|标题|主图|副标|宣传图|详情页[^\s，,（(「]{0,8}|SKU参数[^\s，,（(「]{0,12}|卖点|价格[^\s，,（(「]{0,6}|成分表[^\s，,（(「]{0,8}|检测报告[^\s，,（(「]{0,8}|配料表[^\s，,（(「]{0,8}|资质区|详情页)/;
+function parsePart(t){
+  const s = String(t).trim();
+  const m = s.match(LOC_RE);
+  if (m) return {loc: m[1].trim(), rest: s.slice(m[1].length).trim()};
+  return {loc:'', rest:s};
+}
+/* 「不适用（…）」这类占位文本不作为商家待办下发 */
+function isNotApplicable(t){
+  return /不适用|不可补证|无补证空间|系统故障/.test(String(t)) && String(t).length < 60;
+}
+function buildTodos(c){
+  /* 整段都是「不适用（系统故障…）」时，一条待办都不下发 */
+  const raw = String(c.output.appeal.rectificationParts || '').trim();
+  const naWhole = /^(不适用|无补证空间|无补证)/.test(raw) || (/系统故障/.test(raw) && /不适用/.test(raw));
+  const parts = naWhole ? [] : raw
+    .split(/[；;]/).map(function(s){return s.trim();}).filter(Boolean)
+    .filter(function(s){ return !isNotApplicable(s); });
+  const fix = parts.map(function(p){ const o = parsePart(p); return {loc:o.loc, text:o.rest || p}; });
+  const supply = c.output.evidenceRequests.map(function(e){
+    return {claim:e.claim || '', request:e.request || '', deadline:e.deadline_condition || ''};
+  });
+  return {fix:fix, supply:supply, total: fix.length + supply.length};
+}
+
+/* ================= 问题 → 操作 的对应（把整改/补证挂到具体问题下） ================= */
+/* 金标没有 hit 与整改部件/补证项之间的显式关联字段，这里按语义手工归位：
+     f = 整改部件下标（rectification_parts_list 按「；」拆分后的顺序）
+     s = 补证项下标（evidence_requests 顺序）
+   一条操作只挂到最贴切的那条问题下；未被引用的操作落到卡片底部的「其他需要处理」。 */
+const HIT_ACTIONS = {
+  C31:      [{f:[1],s:[]},    {f:[0],s:[]},   {f:[2],s:[0]}, {f:[],s:[]},   {f:[3],s:[1]}],
+  C35:      [{f:[0],s:[3]},   {f:[],s:[1]},   {f:[2],s:[0]}, {f:[1],s:[]}],
+  NORMAL:   [{f:[0,1],s:[]},  {f:[],s:[]},    {f:[2],s:[]},  {f:[3],s:[]}],
+  DOWNGRADE:[{f:[0,1],s:[]},  {f:[],s:[]},    {f:[2],s:[]},  {f:[3],s:[]}]
+};
+
+/* ================= 状态条推导 ================= */
+function deriveSteps(c){
+  const cons = c.output.conclusion;
+  const td = buildTodos(c);
+  const degraded = c.mode === 'degraded';
+  const steps = [{idx:'1', name:'提交资料', st:'done', note:'商品信息与图片已提交', ts:DEMO_TS.submit}];
+
+  if (cons === 'RECHECK'){
+    steps.push({idx:'2', name:'系统校验', st:'hold', note:'服务超时，重试中'});
+    steps.push({idx:'3', name:'处理问题', st:'hold', note:'系统故障，无需操作'});
+    steps.push({idx:'4', name:'机器审核', st:'', note:'待重试结果'});
+    steps.push({idx:'5', name:'复判结果', st:'', note:'等待重试结果'});
+    return steps;
+  }
+  steps.push({idx:'2', name:'系统校验', st:'done',
+    note: degraded ? '已由机器审核通道完成' : '已完成一致性校验', ts:DEMO_TS.machine});
+  if (cons === 'PASS'){
+    steps.push({idx:'3', name:'处理问题', st:'done', note:'无需处理'});
+    steps.push({idx:'4', name:'机器审核', st:'done', note:'无需审核介入'});
+    steps.push({idx:'5', name:'复判结果', st:'done', note:'已放行'});
+  } else if (td.total > 0){
+    steps.push({idx:'3', name:'处理问题', st:'now', note:'待处理 '+td.total+' 项', ts:DEMO_TS.manual});
+    steps.push({idx:'4', name:'机器审核', st:'', note:'待机器审核'});
+    steps.push({idx:'5', name:'复判结果', st:'', note:'等待复判'});
+  } else {
+    steps.push({idx:'3', name:'处理问题', st:'done', note:'无需处理'});
+    steps.push({idx:'4', name:'机器审核', st:'', note:'等待机器审核'});
+    steps.push({idx:'5', name:'复判结果', st:'', note:'等待复判'});
+  }
+  return steps;
+}
+
+/* ================= 渲染 ================= */
+const state = { id:'C31', checked:{}, edits:{}, sent:{}, matText:{}, files:[], submitted:false, shopOpen:false, pendingKey:'' };
+
+function currentCase(){ return normalize(CASES[state.id]); }
+
+function resetState(id){
+  state.id = id; state.checked = {}; state.edits = {}; state.sent = {}; state.matText = {}; state.files = []; state.submitted = false; state.shopOpen = false; state.pendingKey = '';
+  const sel = document.getElementById('fileInput'); if (sel) sel.value = '';
+}
+
+/* 顶栏右侧：商家角色切换 + 补证中心待处理角标 */
+function shopName(c){ return c.input.shop || '未提供店铺名'; }
+
+function renderShellMeta(){
+  const c = currentCase();
+  const chip = document.getElementById('shopChip');
+  chip.classList.toggle('open', !!state.shopOpen);
+  chip.setAttribute('aria-expanded', state.shopOpen ? 'true' : 'false');
+  chip.innerHTML = '<span class="sw-n">'+esc(shopName(c))+'</span><span class="sw-c">▼</span>';
+
+  const list = document.getElementById('shopList');
+  list.className = 'shop-pop' + (state.shopOpen ? '' : ' hide');
+  list.innerHTML = '<div class="sp-head">切换商家</div>' + CASE_ORDER.map(function(id){
+    const cc = normalize(CASES[id]);
+    const mm = M_STATUS[cc.output.conclusion] || M_STATUS.RECHECK;
+    return '<div class="sp-item'+(id===state.id?' on':'')+'" data-case="'+esc(id)+'">'
+      + '<span class="sp-dot" style="background:var(--'+mm.tone+')"></span>'
+      + '<div class="sp-main"><div class="sp-n">'+esc(shopName(cc))+'</div>'
+      +   '<div class="sp-s">'+esc(cc.input.title || '未提供商品标题')+' · '+esc(mm.t)+'</div></div>'
+      + '</div>';
+  }).join('');
+
+  /* 补证中心角标 = 当前店铺下需要商家处理的商品数 */
+  const mine = CASE_ORDER.filter(function(id){
+    const cc = normalize(CASES[id]);
+    return shopName(cc) === shopName(c)
+      && ['WARN','REVIEW','BLOCK'].indexOf(cc.output.conclusion) >= 0;
+  }).length;
+  const badge = document.getElementById('navBadge');
+  badge.textContent = mine;
+  badge.style.display = mine ? '' : 'none';
+}
+
+/* 页头：标题 / 摘要 / 状态徽标 */
+function renderPageHead(c){
+  const m = M_STATUS[c.output.conclusion] || M_STATUS.RECHECK;
+  document.getElementById('phTitle').textContent = '商品详情审核 · ' + m.t;
+  document.getElementById('phMeta').innerHTML =
+      '商品编号 <b>'+esc(mzPid(c))+'</b>'
+    + (c.input.category ? ' · 类目 '+esc(c.input.category) : '')
+    + ' · 提交 <span class="ts">'+esc(DEMO_TS.submit)+'</span>'
+    + (c.output.conclusion === 'PASS' ? '' : ' · 驳回 <span class="ts">'+esc(DEMO_TS.manual)+'</span>')
+    + ' <span class="mode-tag plain">时间为原型示意</span>'
+    + (c.mode === 'degraded' ? ' <span class="mode-tag degraded">本次已转机器审核</span>' : '');
+  const st = document.getElementById('phStatus');
+  st.className = 'ph-status ' + m.tone;
+  st.textContent = m.t;
+}
+
+/* 横向步骤条 */
+function renderSteps(c){
+  const steps = deriveSteps(c);
+  document.getElementById('steps').innerHTML = steps.map(function(s,i){
+    const cls = s.st === 'done' ? 'done' : (s.st === 'hold' ? 'hold' : (s.st === 'now' ? 'now' : 'wait'));
+    const mark = s.st === 'done' ? '✓' : s.idx;
+    const sub = s.ts ? '<span class="ts">'+esc(shortTs(s.ts))+'</span>' : esc(s.note);
+    const seg = '<div class="stp '+cls+'">'
+      + '<span class="stp-dot">'+esc(mark)+'</span>'
+      + '<span class="stp-txt"><span class="stp-name">'+esc(s.name)+'</span>'
+      +   '<span class="stp-note">'+sub+'</span></span></div>';
+    return i < steps.length - 1 ? seg + '<span class="stp-line"></span>' : seg;
+  }).join('');
+}
+
+/* 键值行：左键右值 */
+function kvRow(k, v){
+  return '<div class="kv"><span class="kv-k">'+esc(k)+'</span><span class="kv-v">'+v+'</span></div>';
+}
+
+/* 你提交的商品信息卡：回放商家当时提交的图文，供对照下方判定结果 */
+function renderOriginal(c){
+  const inp = c.input || {};
+  const rows = [];
+
+  /* 1. 商品标题 + 类目 */
+  if (inp.title){
+    rows.push('<div class="orig-title">' + esc(inp.title)
+      + (inp.category ? '<span class="tag soft" style="margin-left:8px">' + esc(inp.category) + '</span>' : '')
+      + '</div>');
+  }
+
+  /* 2. 宣传主张（缺失不虚构） */
+  const claims = Array.isArray(inp.merchantClaims) ? inp.merchantClaims : [];
+  if (claims.length){
+    rows.push('<div class="orig-h">宣传主张</div>'
+      + '<div class="orig-chips">'
+      + claims.map(function(x){ return '<span class="tag">' + esc(x) + '</span>'; }).join('')
+      + '</div>');
+  }
+
+  /* 3. 商品参数（过滤掉「店铺」——顶栏已显示，不重复） */
+  const attrs = (Array.isArray(inp.skuAttributes) ? inp.skuAttributes : [])
+    .filter(function(a){ return a && a.k !== '店铺'; });
+  if (attrs.length){
+    rows.push('<details class="fold"><summary>商品参数（' + attrs.length + ' 项）</summary>'
+      + '<div class="fold-body">'
+      + attrs.map(function(a){ return kvRow(a.k, esc(a.v)); }).join('')
+      + '</div></details>');
+  }
+
+  /* 4. 图片材料：缩略图网格；说明文字不进网格，点开放大后在右侧看 */
+  const list = imgsOf(c);
+  if (list.length){
+    rows.push('<div class="imgs mini" id="origImgs">'
+      + list.map(function(im, i){
+          const art = imgArt(c.id, im);
+          const loc = im.locator || ('图' + (i + 1));
+          return '<figure class="img-th" data-i="' + i + '" tabindex="0" role="button"'
+            + ' aria-label="放大查看 ' + esc(loc) + '：' + esc(imgTypeZh(im)) + '">'
+            + '<div class="it-top"><span class="it-loc">' + esc(loc) + '</span>'
+            + (state.matText[c.id + '::' + loc] ? '<span class="it-chg">已修改</span>' : '')
+            + '<span class="it-type">' + esc(imgTypeZh(im)) + '</span></div>'
+            + '<div class="it-frame">'
+            + (art || '<div class="it-noart">本条暂无预览图</div>')
+            + '</div></figure>';
+        }).join('')
+      + '</div>');
+  } else {
+    rows.push('<div class="imgs-na">本条未上传图片材料</div>');
+  }
+
+  return '<div class="card"><div class="card-pad">'
+    + '<div class="sec-head"><span class="sec-title">你提交的商品信息</span>'
+    +   '<span class="mode-tag plain" style="margin-left:auto">提交 '
+    +     esc(shortTs(DEMO_TS.submit)) + ' · 原型示意</span></div>'
+    + '<div class="sec-sub">以下为你提交时填写与上传的内容，用于对照下方判定结果</div>'
+    + rows.join('')
+    + '</div></div>';
+}
+
+/* 缩略图点击放大：照搬 renderImgs 的绑定方式（重渲染后重新绑定） */
+function bindOrigImgs(){
+  const box = document.getElementById('origImgs');
+  if (!box) return;
+  Array.prototype.forEach.call(box.querySelectorAll('.img-th'), function(el){
+    const open = function(){ openLightbox(parseInt(el.getAttribute('data-i'), 10)); };
+    el.addEventListener('click', open);
+    el.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); open(); }
+    });
+  });
+}
+
+/* 单条「需要修改的内容」：文字改动就地输入 → 提交后同步刷新材料图；要补文件的才弹文件选择器。
+   判据是「动作」不是「位置」：图上的一句话也是文字改动，改文字就行，不必让人重新传一张图。 */
+function todoFixHtml(it, i){
+  const key = 'fix'+i, on = !!state.checked[key];
+  const txt = String(it.text || '');
+  /* 整改要求里 「」 内的一般就是要改掉的原表述，预填进输入框供商家直接改 */
+  const orig = (txt.match(/「([^」]+)」/) || [])[1] || '';
+  const val = state.edits[key] !== undefined ? state.edits[key] : orig;
+  /* 要证明 / 报告 / 证书的，才需要选文件；「删掉 / 改为 / 移除」这类只改文字 */
+  const needFile = /补证|补齐|证明|证书|报告|主体关系|资质/.test(txt);
+  const needText = !needFile || /改|删|修正|移除|标注|限定|核实|对齐|表述/.test(txt);
+  const mine = state.files.filter(function(f){ return f.key === key; });
+
+  let act = '';
+  if (needText){
+    act += '<input class="fix-input" type="text" data-key="'+key+'" data-orig="'+esc(orig)+'"'
+      +   ' value="'+esc(val)+'" placeholder="填写修改后的内容" aria-label="修改后的内容">'
+      + '<div class="sup-up">'
+      +   '<button class="btn tiny" type="button" data-act="fixsubmit" data-key="'+key+'">提交修改</button>'
+      +   '<span class="fix-hint">'+(orig ? '原文：'+esc(orig)+'　提交后自动更新' : '填写后点提交')+'</span>'
+      + '</div>';
+  }
+  if (needFile){
+    act += '<div class="sup-up">'
+      +   '<button class="btn tiny" type="button" data-act="up" data-key="'+key+'">上传材料</button>'
+      +   mine.map(function(f){ return '<span class="file">📎 '+esc(f.name)+'</span>'; }).join('')
+      + '</div>'
+      + '<div class="fix-hint">需要补交新的材料文件，请选择后上传。</div>';
+  }
+  if (state.sent[key]) act += '<div class="fix-hint">已提交：'+esc(state.sent[key])+'</div>';
+
+  return '<div class="todo'+(on?' done':'')+'" data-key="'+key+'">'
+    + '<div class="todo-box">✓</div>'
+    + '<div class="todo-main"><div class="todo-title">'
+    +   (it.loc ? '<span class="loc">'+esc(it.loc)+'</span>' : '')
+    +   '<span>'+esc(it.text)+'</span>'
+    + '</div>'
+    + act
+    + '</div></div>';
+}
+/* 单条「需要补充的材料」：就地给一个上传入口，不必再滚到页面底部 */
+function todoSupplyHtml(it, i){
+  const key = 'sup'+i, on = !!state.checked[key];
+  const mine = state.files.filter(function(f){ return f.key === key; });
+  return '<div class="todo'+(on?' done':'')+'" data-key="'+key+'">'
+    + '<div class="todo-box">✓</div>'
+    + '<div class="todo-main">'
+    +   '<div class="todo-title">'+esc(it.claim || '—')+'</div>'
+    +   '<div class="todo-body">需要补充：'+esc(it.request || '—')+'</div>'
+    +   (it.deadline ? '<div class="todo-meta"><b>截止条件：</b>'+esc(it.deadline)+'</div>' : '')
+    +   '<div class="sup-up">'
+    +     '<button class="btn tiny" type="button" data-act="up" data-key="'+key+'">上传材料</button>'
+    +     mine.map(function(f){ return '<span class="file">📎 '+esc(f.name)+'</span>'; }).join('')
+    +   '</div>'
+    + '</div></div>';
+}
+/* 某条问题对应的操作区：没有专属操作时，提示与其它问题同源 */
+function hitActHtml(td, act, usedFix, usedSup){
+  if (!td.total) return '';
+  const fIdx = (act && act.f) || [], sIdx = (act && act.s) || [];
+  if (!fIdx.length && !sIdx.length){
+    return '<div class="hit-act"><div class="hit-note">'
+      + '本条与上面其它问题同源，按对应问题给出的修改方式一并处理即可。</div></div>';
+  }
+  fIdx.forEach(function(i){ usedFix[i] = true; });
+  sIdx.forEach(function(i){ usedSup[i] = true; });
+  let h = '<div class="hit-act">';
+  if (fIdx.length){
+    h += '<div class="ha-h">需要修改的内容</div>'
+      + fIdx.map(function(i){ return todoFixHtml(td.fix[i], i); }).join('');
+  }
+  if (sIdx.length){
+    h += '<div class="ha-h">需要补充的材料</div>'
+      + sIdx.map(function(i){ return todoSupplyHtml(td.supply[i], i); }).join('');
+  }
+  return h + '</div>';
+}
+
+/* 驳回原因卡：每条命中用规范、可执行的抬头 + 商家填写 / 材料显示 / 差异说明 三行 */
+function renderReject(c){
+  const o = c.output, m = M_STATUS[o.conclusion] || M_STATUS.RECHECK, td = buildTodos(c);
+
+  if (o.conclusion === 'PASS'){
+    return '<div class="card"><div class="card-pad">'
+      + '<div class="rej-head"><span class="sec-title">审核通过</span>'
+      +   '<span class="mode-tag" style="margin-left:auto">无需处理</span></div>'
+      + '<div class="sec-sub">'+esc(m.d)+'</div>'
+      + '<div class="note">你填写的信息、上传的图片与平台规则一致，本条无需处理。</div>'
+      + '</div></div>';
+  }
+
+  const isRecheck = o.conclusion === 'RECHECK';
+  const bannerTxt = isRecheck
+    ? '系统查询服务暂时未返回结果，平台正在自动重试。你无需进行任何操作，也不会因系统故障受到处罚。'
+    : ('本条信息共 ' + o.hits.length + ' 项需要修改。请按下列各项完成修改并补齐材料后，重新提交复核。');
+
+  const hitMap = HIT_ACTIONS[state.id] || [];
+  const usedFix = {}, usedSup = {};
+
+  const items = o.hits.map(function(h,i){
+    /* 系统故障类命中不是商家材料的问题，单独说明，避免商家误以为是自己材料有误 */
+    const toolErr = /TOOL_ERROR/.test(h.reason_code || '') || h.severity === '未决';
+    const title = toolErr ? '本条暂无法核实（非材料问题）'
+                          : (HIT_TITLE[h.dimension] || '信息不一致');
+    const body = toolErr
+      ? '<div class="note" style="margin-top:8px">系统核验证书时查询服务超时，与你的材料无关。'
+        + '平台将自动重试：重试成功后继续正常审核；若持续失败，将转人工线下核验，期间不会对本商品做任何处罚。</div>'
+      : kvRow('商家填写', '<span class="quo">'+esc(h.claim||'—')+'</span>')
+        + kvRow('材料显示', esc(h.evidence||'—'))
+        + kvRow('差异说明', esc(h.violation||'—'));
+    return '<div class="rej-item">'
+      + '<div class="ri-head"><span class="ri-n">'+String(i+1).padStart(2,'0')+'</span>'
+      +   '<span class="ri-t">'+esc(title)+'</span>'
+      +   '<span class="tag '+sevClass(h.severity)+'">'+esc(SEV_PLAIN[h.severity] || h.severity || '—')+'</span></div>'
+      + body
+      + (toolErr ? '' : hitActHtml(td, hitMap[i], usedFix, usedSup))
+      + '</div>';
+  }).join('');
+
+  /* 没挂到具体问题上的操作集中列在底部；同样是可勾选的待办，避免遗漏导致无法提交 */
+  let restRows = '', restN = 0;
+  td.fix.forEach(function(it,i){ if (!usedFix[i]){ restRows += todoFixHtml(it, i); restN++; } });
+  td.supply.forEach(function(it,i){ if (!usedSup[i]){ restRows += todoSupplyHtml(it, i); restN++; } });
+  const restHtml = restN
+    ? '<div class="todo-group" style="margin-top:16px"><div class="tg-head">'
+      + '<span class="tg-name">其他需要处理</span><span class="tg-count">'+restN+' 项</span></div>'
+      + restRows + '</div>'
+    : '';
+
+  return '<div class="card"><div class="card-pad">'
+    + '<div class="rej-head"><span class="sec-title">'+(isRecheck?'系统核对中':'驳回原因')+'</span>'
+    +   (o.hits.length ? '<span class="rej-badge">'+o.hits.length+'</span>' : '')
+    +   (c.mode==='degraded'
+    ?   '<span class="mode-tag degraded" style="margin-left:auto">本次已转机器审核</span>' : '')
+    +   '</div>'
+    + '<div class="rej-banner '+m.tone+'">'+esc(bannerTxt)+'</div>'
+    + items + restHtml
+    + '</div></div>';
+}
+
+function renderProgress(){
+  const c = currentCase(), td = buildTodos(c);
+  const total = td.total;
+  let done = 0;
+  for (let i=0;i<td.fix.length;i++) if (state.checked['fix'+i]) done++;
+  for (let i=0;i<td.supply.length;i++) if (state.checked['sup'+i]) done++;
+  const pct = total ? Math.round(done/total*100) : 100;
+
+  /* 底部操作栏左侧：进度条 + 计数 + 提示 */
+  const lead = document.getElementById('actLead');
+  if (total){
+    let hint;
+    if (state.submitted) hint = '已提交，等待平台复判。';
+    else if (done < total) hint = '还有 ' + (total-done) + ' 项未处理，改完/传完即可提交。';
+    else if (!state.files.length) hint = '已全部处理完，可直接提交（建议一并上传补充材料）。';
+    else hint = '已全部处理完，可提交。';
+    lead.innerHTML =
+        '<div class="prog-bar"><div class="prog-fill" style="width:'+pct+'%"></div></div>'
+      + '<span class="act-count" id="actCount">待处理 <b>'+total+'</b> 项 · 已处理 <b>'+done+'/'+total+'</b></span>'
+      + '<span class="act-hint" id="actHint">'+esc(hint)+'</span>';
+  } else {
+    lead.innerHTML = '<span class="act-count">'+esc(c.output.conclusion==='PASS' ? '本条已通过，无需提交' : '本条无需处理')+'</span>';
+  }
+
+  /* 右栏进度卡 */
+  const railFill = document.getElementById('railFill');
+  if (railFill){
+    railFill.style.width = pct + '%';
+    document.getElementById('railDone').innerHTML = done + '<small>/'+total+'</small>';
+    document.getElementById('railNote').textContent =
+      done === 0 ? '尚未开始处理' : (done >= total ? '已全部处理，可提交' : '已处理 ' + done + ' 项');
+  }
+
+  const btn = document.getElementById('submitBtn');
+  if (btn) btn.disabled = !(total > 0 && done === total && !state.submitted);
+}
+
+/* 为什么这样判定：逐条对照 */
+function renderWhy(c){
+  const o = c.output;
+  const dim = function(d){ return DIM_LABEL[d] || d || '—'; };
+
+  const body = o.hits.length
+    ? o.hits.map(function(h){
+        /* 与「驳回原因」口径一致：系统故障类命中不是商家材料的问题，不套用材料类问题名 */
+        const toolErr = /TOOL_ERROR/.test(h.reason_code || '') || h.severity === '未决';
+        const typeTxt = toolErr ? '本条暂无法核实（非材料问题）'
+                                : (HIT_TITLE[h.dimension] || '信息不一致');
+        return '<div class="why-item">'
+          + '<div class="why-head">'
+          +   '<span class="tag">'+esc(h.content_layer || '—')+'</span>'
+          +   '<span class="tag soft">'+esc(typeTxt)+'</span>'
+          +   '<span class="tag '+sevClass(h.severity)+'">影响程度 '+esc(SEV_PLAIN[h.severity] || h.severity || '—')+'</span>'
+          + '</div>'
+          + '<div class="cmp">'
+          +   '<div class="cmp-side left"><span class="cmp-k">商家填写 / 上传内容</span>'+esc(h.claim || '—')+'</div>'
+          +   '<div class="cmp-mid">≠</div>'
+          +   '<div class="cmp-side right"><span class="cmp-k">材料显示内容</span>'+esc(h.evidence || '—')+'</div>'
+          + '</div>'
+          + '<div class="why-violation"><b>差异说明：</b>'+esc(h.violation || '—')+'</div>'
+          + '</div>';
+      }).join('')
+    : '<div class="empty">本条未发现不一致项。</div>';
+
+  const pass = o.passChecks.length
+    ? o.passChecks.map(function(p){
+        return '<div class="pass-row"><span class="ok">✓</span><span><b>'+esc(dim(p.dimension))+'</b>：'+esc(p.note || '')+'</span></div>';
+      }).join('')
+    : '<div class="hint">无</div>';
+
+  return '<div class="card"><div class="card-pad">'
+    + '<div class="sec-head"><span class="sec-num">01</span><span class="sec-title">为什么这样判定</span></div>'
+    + '<div class="sec-sub">每条判定均对应「商家填写 / 上传的内容」与「材料显示的内容」，可逐条查看并据此申诉</div>'
+    + body
+    + '<details class="fold"><summary>查看已确认无问题的项</summary>'
+    + '<div class="fold-body"><div class="pass-list">'+pass+'</div></div></details>'
+    + '</div></div>';
+}
+
+/* 审核依据与申诉 */
+function renderRules(c){
+  const a = c.output.appeal;
+  const appeal = (!a.recoup && !a.suggestion)
+    ? '<div class="appeal"><div class="appeal-t">申诉</div><div class="appeal-line">本条无需申诉。</div></div>'
+    : '<div class="appeal" id="appealBox">'
+      + '<div class="appeal-t">申诉与复核</div>'
+      + (a.recoup ? '<div class="appeal-line"><b>可否翻案：</b>'+esc(a.recoup)+'</div>' : '')
+      + (a.suggestion ? '<div class="appeal-line"><b>平台建议：</b>'+esc(a.suggestion)+'</div>' : '')
+      + '<div class="appeal-line hint">若已补齐材料或认为判定有误，可提交补证后申请复核。</div>'
+      + '</div>';
+
+  return '<div class="card" id="ruleCard"><div class="card-pad">'
+    + '<div class="sec-head"><span class="sec-num">02</span><span class="sec-title">审核依据与申诉</span></div>'
+    + '<div class="sec-sub">平台仅做「信息一致性」判定，不做类目准入判定</div>'
+    + '<div class="rule-list">'
+    +   '<div class="rule"><div class="rule-t">图文互证</div><div class="rule-d">标题、参数、详情页、图片之间需相互支持。宣传主张须有材料佐证，且材料仅能证明其实际覆盖的范围。</div></div>'
+    +   '<div class="rule"><div class="rule-t">功效与条件</div><div class="rule-d">检测报告含作用时间、菌种、样本量等限定条件；宣传时不得省略限定条件，也不得将实验室条件下的结果表述为日常使用效果。</div></div>'
+    +   '<div class="rule"><div class="rule-t">资质有效性</div><div class="rule-d">证书、报告需可核验、在有效期内，并与售卖主体（店铺 / 品牌）相对应。</div></div>'
+    + '</div>'
+    + appeal
+    + '</div></div>';
+}
+
+/* 右栏：处理进度 + 审核时间线 */
+function renderRail(c){
+  const td = buildTodos(c), m = M_STATUS[c.output.conclusion] || M_STATUS.RECHECK;
+  let rail0 = '', rail1;
+
+  if (td.total > 0){
+    rail0 = '<div class="card"><div class="card-pad">'
+      + '<div class="sec-head"><span class="sec-title" style="font-size:13px">剩余补证时间</span></div>'
+      + '<div class="cd-num" style="margin-top:12px">'+esc(DEMO_CD.d)+'<em>天</em>'+esc(DEMO_CD.h)+'<em>小时</em></div>'
+      + '<div class="cd-bar"><div class="cd-fill" style="width:'+DEMO_CD.pct+'%"></div></div>'
+      + '<div class="cd-hint">倒计时用于提醒补证时限；超时后的处理口径以平台正式规则为准。</div>'
+      + '<div class="cd-demo">原型示意 · 演示值，本页未接入真实截止时间与计时逻辑</div>'
+      + '</div></div>';
+  }
+
+  if (td.total > 0){
+    rail1 = '<div class="card"><div class="card-pad">'
+      + '<div class="sec-head"><span class="sec-title" style="font-size:13px">处理进度</span></div>'
+      + '<div class="sec-sub" style="margin-bottom:12px">按各条问题给出的方式完成修改或补交材料后实时更新</div>'
+      + '<div class="rail-prog"><span class="rp-num" id="railDone">0<small>/'+td.total+'</small></span>'
+      +   '<span class="rp-note" id="railNote">尚未开始处理</span></div>'
+      + '<div class="prog-bar"><div class="prog-fill" id="railFill" style="width:0%"></div></div>'
+      + '</div></div>';
+  } else {
+    const txt = c.output.conclusion === 'PASS'
+      ? '本条已通过一致性校验，无需整改与补证。'
+      : (c.output.conclusion === 'RECHECK'
+        ? '平台正在重新取数，你无需操作。'
+        : '本条无需处理的条目，等待平台复核。');
+    rail1 = '<div class="card"><div class="card-pad">'
+      + '<div class="sec-head"><span class="sec-title" style="font-size:13px">处理进度</span></div>'
+      + '<div class="rail-empty">'+esc(txt)+'</div></div></div>';
+  }
+
+  const tl = deriveSteps(c).map(function(s){
+    const cls = s.st === 'done' ? 'done' : (s.st === 'hold' ? 'hold' : (s.st === 'now' ? 'now' : ''));
+    return '<div class="tl-item"><span class="tl-dot '+cls+'"></span>'
+      + '<div class="tl-t">'+esc(s.name)+'</div>'
+      + '<div class="tl-d">'+esc(s.note)+(s.ts ? '<br><span class="ts">'+esc(s.ts)+'</span>' : '')+'</div></div>';
+  }).join('');
+
+  const rail2 = '<div class="card"><div class="card-pad">'
+    + '<div class="sec-head"><span class="sec-title" style="font-size:13px">审核时间线</span>'
+    +   '<span class="mode-tag" style="margin-left:auto">'+esc(m.t)+'</span></div>'
+    + '<div class="sec-sub" style="margin-bottom:12px">按流程节点展示；时间为原型示意值</div>'
+    + '<div class="tl">'+tl+'</div>'
+    + '</div></div>';
+
+  document.getElementById('colRail').innerHTML = rail0 + rail1 + rail2;
+}
+
+/* 页脚只保留「本页是原型」的声明，不出现用例编号、审核 skill 名、档位码路径等内部标识 */
+function renderFoot(){
+  const src = [];
+  src.push('<b>数据来源：</b>平台审核系统的样例数据，非你的真实商品数据，也非实时审核结果。');
+  src.push('<b>审核规范：</b>平台商品信息一致性审核规范。本页只呈现审核结论与整改要求，完整审核记录保留在平台侧。');
+  src.push('<b>原型说明：</b>本页为交互原型，按钮与上传均为前端演示，不与后端联通；勾选进度不做持久化。页面中「提交 / 驳回时间」与「剩余补证时间」均为原型示意演示值，样例数据不含时间字段。');
+  document.getElementById('foot').innerHTML = src.join('<br>');
+}
+
+/* 底部操作栏按钮 */
+function renderActions(c){
+  const td = buildTodos(c);
+  let btns;
+  if (td.total > 0){
+    btns = '<button class="btn ghost" data-act="draft">暂存草稿</button>'
+      + '<button class="btn ghost" data-act="appeal">我要申诉</button>'
+      + '<span class="act-sep"></span>'
+      + '<button class="btn primary" data-act="submit" id="submitBtn" disabled>提交整改与补证</button>';
+  } else if (c.output.conclusion === 'PASS'){
+    btns = '<span class="act-hint">本条已通过，无需提交</span>';
+  } else if (c.output.conclusion === 'RECHECK'){
+    btns = '<button class="btn" disabled>系统重试中</button>';
+  } else {
+    btns = '<button class="btn ghost" data-act="appeal">我要申诉</button>';
+  }
+  document.getElementById('actActions').innerHTML = btns;
+  renderProgress();
+}
+
+/* ================= 商家上传材料（缩略图 + 点开看大图） ================= */
+/* 图片是审核的原始输入，不是结论的装饰——每条断裂都要能指回具体某张图。
+   金标 images 为空是合法状态，页面给诚实空态，不造图。 */
+const IMG_TYPE_ZH = {
+  main_image:'主图', promo_image:'宣传图', detail_image:'详情图',
+  product_image:'商品图', report:'检测报告', certificate:'资质证书'
+};
+
+/* 矢量仿真材料图：金标只给了文字描述，这里按描述还原成「图」。
+   报告与宣传图本身是平面文档 / 海报，矢量还原的文字比糊掉的生成字更清楚，
+   也正好让「作用时间1min 只在报告里、宣传图没标注」这类断裂肉眼可查。 */
+const MATERIAL_ART = {};
+
+MATERIAL_ART['C31::图3'] = [
+'<svg viewBox="0 0 320 430" width="480" height="645" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="第三方杀灭率检测报告">',
+'<defs>',
+'<linearGradient id="c31r_hd" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#eaf2fc"/><stop offset="1" stop-color="#f8fbfe"/></linearGradient>',
+'<filter id="c31r_gr" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>',
+'</defs>',
+'<rect width="320" height="430" fill="#ffffff"/>',
+'<rect width="320" height="62" fill="url(#c31r_hd)"/>',
+'<rect width="4.5" height="62" fill="#1a5fbf"/>',
+'<line x1="0" y1="62" x2="320" y2="62" stroke="#dfe5ee"/>',
+'<text x="20" y="29" font-size="14.5" font-weight="700" fill="#16233b" letter-spacing="1.5">检 测 报 告</text>',
+'<text x="20" y="46" font-size="7.5" letter-spacing="2.4" fill="#9aa6b8">TEST REPORT</text>',
+'<text x="214" y="26" font-size="7.5" fill="#9aa6b8">报告编号</text>',
+'<text x="214" y="40" font-size="9.5" font-weight="700" fill="#33415c">KJ20240618</text>',
+'<text x="20" y="88" font-size="8.5" fill="#7b8798">委托单位</text>',
+'<text x="78" y="88" font-size="10" font-weight="600" fill="#25324a">康洁生物科技有限公司</text>',
+'<line x1="20" y1="96" x2="300" y2="96" stroke="#e8ecf3"/>',
+'<text x="20" y="114" font-size="8.5" fill="#7b8798">样品名称</text>',
+'<text x="78" y="114" font-size="10" font-weight="600" fill="#25324a">75%酒精消毒喷雾</text>',
+'<line x1="20" y1="122" x2="300" y2="122" stroke="#e8ecf3"/>',
+'<text x="20" y="140" font-size="8.5" fill="#7b8798">检测日期</text>',
+'<text x="78" y="140" font-size="10" font-weight="600" fill="#25324a">2024-06-18</text>',
+'<line x1="20" y1="148" x2="300" y2="148" stroke="#e8ecf3"/>',
+'<text x="20" y="166" font-size="8.5" fill="#7b8798">检测依据</text>',
+'<text x="78" y="166" font-size="10" fill="#25324a">GB/T 26373 醇类消毒剂卫生要求</text>',
+'<line x1="20" y1="174" x2="300" y2="174" stroke="#e8ecf3"/>',
+'<rect x="20" y="190" width="280" height="21" fill="#eef1f7"/>',
+'<text x="28" y="205" font-size="8.5" font-weight="700" fill="#3d4a63">检测项目</text>',
+'<text x="146" y="205" font-size="8.5" font-weight="700" fill="#3d4a63">作用时间</text>',
+'<text x="200" y="205" font-size="8.5" font-weight="700" fill="#3d4a63">杀灭率</text>',
+'<text x="258" y="205" font-size="8.5" font-weight="700" fill="#3d4a63">结果</text>',
+'<line x1="20" y1="211" x2="300" y2="211" stroke="#dfe5ee"/>',
+'<text x="28" y="230" font-size="9.5" fill="#25324a">大肠杆菌</text>',
+'<text x="146" y="230" font-size="9.5" fill="#25324a">1min</text>',
+'<text x="200" y="230" font-size="10.5" font-weight="700" fill="#1a5fbf">99.999%</text>',
+'<text x="260" y="230" font-size="9.5" font-weight="600" fill="#1c8a52">合格</text>',
+'<line x1="20" y1="238" x2="300" y2="238" stroke="#eef1f7"/>',
+'<text x="28" y="257" font-size="9.5" fill="#25324a">金黄色葡萄球菌</text>',
+'<text x="146" y="257" font-size="9.5" fill="#25324a">1min</text>',
+'<text x="200" y="257" font-size="10.5" font-weight="700" fill="#1a5fbf">99.999%</text>',
+'<text x="260" y="257" font-size="9.5" font-weight="600" fill="#1c8a52">合格</text>',
+'<line x1="20" y1="265" x2="300" y2="265" stroke="#eef1f7"/>',
+'<text x="20" y="293" font-size="8.5" fill="#7b8798">检验结论</text>',
+'<text x="78" y="294" font-size="12.5" font-weight="700" fill="#1c8a52">合格</text>',
+'<g transform="translate(234,332)">',
+'<circle r="43" fill="#c0281f" opacity="0.07"/>',
+'<circle r="43" fill="none" stroke="#c0281f" stroke-width="1.7" opacity="0.72"/>',
+'<circle r="35.5" fill="none" stroke="#c0281f" stroke-width="0.7" stroke-dasharray="2.5 2.5" opacity="0.58"/>',
+'<text y="-7" text-anchor="middle" font-size="15" font-weight="800" fill="#c0281f" opacity="0.86">CMA</text>',
+'<text y="7" text-anchor="middle" font-size="6.6" fill="#c0281f" opacity="0.8">201819046305</text>',
+'<text y="19" text-anchor="middle" font-size="5.8" fill="#c0281f" opacity="0.72">检验检测机构资质认定</text>',
+'</g>',
+'<line x1="0" y1="398" x2="320" y2="398" stroke="#e8ecf3"/>',
+'<text x="20" y="414" font-size="7.5" fill="#a7b0bf">本报告仅对来样负责 · 未经同意不得部分复制</text>',
+'<text x="244" y="414" font-size="7.5" fill="#a7b0bf">第 1 页 / 共 1 页</text>',
+'<rect width="320" height="430" filter="url(#c31r_gr)" opacity="0.05"/>',
+'</svg>'
+].join('');
+
+MATERIAL_ART['C31::图1'] = [
+'<svg viewBox="0 0 400 400" width="520" height="520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="酒精喷雾主图：500ml 与 100ml 两瓶实拍">',
+'<defs>',
+'<linearGradient id="c31m_bg" x1="0" y1="0" x2="0" y2="1">',
+'<stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#eef2f8"/></linearGradient>',
+'<linearGradient id="c31m_glass" x1="0" y1="0" x2="1" y2="0">',
+'<stop offset="0" stop-color="#d8e4f3"/><stop offset="0.42" stop-color="#f4f8fd"/>',
+'<stop offset="1" stop-color="#c6d6ea"/></linearGradient>',
+'<linearGradient id="c31m_lbl" x1="0" y1="0" x2="0" y2="1">',
+'<stop offset="0" stop-color="#3074d6"/><stop offset="1" stop-color="#154a9c"/></linearGradient>',
+'<radialGradient id="c31m_lt" cx="0.5" cy="0.34" r="0.62">',
+'<stop offset="0" stop-color="#ffffff" stop-opacity="0.92"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>',
+'<filter id="c31m_gr" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>',
+'</defs>',
+'<rect width="400" height="400" fill="url(#c31m_bg)"/>',
+'<ellipse cx="200" cy="196" rx="182" ry="152" fill="url(#c31m_lt)"/>',
+'<ellipse cx="142" cy="350" rx="54" ry="9" fill="#8fa2bd" opacity="0.13"/>',
+'<ellipse cx="264" cy="348" rx="37" ry="7" fill="#8fa2bd" opacity="0.13"/>',
+'<rect x="100" y="180" width="84" height="164" rx="14" fill="url(#c31m_glass)" stroke="#b9c9de" stroke-width="1.2"/>',
+'<rect x="128" y="160" width="28" height="22" rx="4" fill="#e2ebf7" stroke="#b9c9de" stroke-width="1"/>',
+'<rect x="134" y="126" width="16" height="36" fill="#c6d5e8"/>',
+'<rect x="112" y="104" width="56" height="22" rx="7" fill="#b3c6de"/>',
+'<rect x="96" y="108" width="18" height="11" rx="3" fill="#8ba3c2"/>',
+'<path d="M154 126 q17 6 14 25 q-2 11 -13 13" fill="none" stroke="#a3b8d2" stroke-width="8" stroke-linecap="round"/>',
+'<rect x="106" y="216" width="72" height="112" rx="9" fill="url(#c31m_lbl)"/>',
+'<text x="142" y="253" text-anchor="middle" font-size="26" font-weight="800" fill="#ffffff">75%</text>',
+'<text x="142" y="271" text-anchor="middle" font-size="9" fill="#dce9ff">酒精消毒喷雾</text>',
+'<line x1="118" y1="282" x2="166" y2="282" stroke="#ffffff" stroke-opacity="0.34"/>',
+'<text x="142" y="306" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">500ml</text>',
+'<text x="142" y="319" text-anchor="middle" font-size="7.5" fill="#c9dcff">净含量</text>',
+'<rect x="236" y="238" width="60" height="106" rx="11" fill="url(#c31m_glass)" stroke="#b9c9de" stroke-width="1.1"/>',
+'<rect x="254" y="224" width="20" height="16" rx="3" fill="#e2ebf7" stroke="#b9c9de"/>',
+'<rect x="258" y="198" width="12" height="28" fill="#c6d5e8"/>',
+'<rect x="244" y="182" width="40" height="17" rx="6" fill="#b3c6de"/>',
+'<rect x="232" y="185" width="14" height="9" rx="2" fill="#8ba3c2"/>',
+'<path d="M283 198 q13 4 10 19 q-2 8 -10 10" fill="none" stroke="#a3b8d2" stroke-width="6" stroke-linecap="round"/>',
+'<rect x="241" y="262" width="50" height="72" rx="7" fill="url(#c31m_lbl)"/>',
+'<text x="266" y="290" text-anchor="middle" font-size="16" font-weight="800" fill="#ffffff">75%</text>',
+'<text x="266" y="304" text-anchor="middle" font-size="7" fill="#dce9ff">酒精消毒喷雾</text>',
+'<line x1="249" y1="312" x2="283" y2="312" stroke="#ffffff" stroke-opacity="0.34"/>',
+'<text x="266" y="326" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">100ml</text>',
+'<text x="200" y="381" text-anchor="middle" font-size="8" fill="#a7b0bf" letter-spacing="0.8">净卫日化旗舰店</text>',
+'<rect width="400" height="400" filter="url(#c31m_gr)" opacity="0.045"/>',
+'</svg>'
+].join('');
+
+MATERIAL_ART['C31::图2'] = [
+'<svg viewBox="0 0 400 400" width="520" height="520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="宣传图：大字杀菌率99.999%，副标75%酒精 广谱杀菌">',
+'<defs>',
+'<linearGradient id="c31p_bg" x1="0" y1="0" x2="1" y2="1">',
+'<stop offset="0" stop-color="#2a6fe0"/><stop offset="0.55" stop-color="#1550b8"/>',
+'<stop offset="1" stop-color="#0a2f7a"/></linearGradient>',
+'<radialGradient id="c31p_glow" cx="0.5" cy="0.3" r="0.66">',
+'<stop offset="0" stop-color="#ffffff" stop-opacity="0.26"/>',
+'<stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>',
+'<linearGradient id="c31p_sw" x1="0" y1="0" x2="1" y2="1">',
+'<stop offset="0" stop-color="#ffffff" stop-opacity="0"/><stop offset="0.5" stop-color="#ffffff" stop-opacity="0.13"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>',
+'<filter id="c31p_gr" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>',
+'</defs>',
+'<rect width="400" height="400" fill="url(#c31p_bg)"/>',
+'<rect width="400" height="400" fill="url(#c31p_glow)"/>',
+'<path d="M-40 400 L200 96 L300 96 L60 400 Z" fill="url(#c31p_sw)"/>',
+'<circle cx="338" cy="74" r="88" fill="#ffffff" opacity="0.05"/>',
+'<circle cx="52" cy="338" r="112" fill="#ffffff" opacity="0.04"/>',
+'<text x="200" y="34" text-anchor="middle" font-size="10.5" letter-spacing="1.6" fill="#ffffff" opacity="0.62">净卫日化旗舰店</text>',
+'<path d="M46 50 l18 7 v14 c0 13 -8 20 -18 24 c-10 -4 -18 -11 -18 -24 v-14 z" fill="#ffffff" opacity="0.2"/>',
+'<rect x="42" y="59" width="5.4" height="18" rx="1.3" fill="#ffffff" opacity="0.9"/>',
+'<rect x="35.7" y="65.3" width="18" height="5.4" rx="1.3" fill="#ffffff" opacity="0.9"/>',
+'<rect x="286" y="48" width="80" height="25" rx="12.5" fill="#ffffff" opacity="0.16"/>',
+'<text x="326" y="65" text-anchor="middle" font-size="12.5" font-weight="600" fill="#ffffff">75%酒精</text>',
+'<text x="200" y="130" text-anchor="middle" font-size="23" font-weight="700" letter-spacing="3" fill="#ffffff">杀菌率</text>',
+'<text x="200" y="203" text-anchor="middle" font-size="56" font-weight="800" letter-spacing="-1" fill="#ffffff" stroke="#ffc94d" stroke-width="1.6" paint-order="stroke">99.999%</text>',
+'<text x="200" y="241" text-anchor="middle" font-size="16.5" font-weight="600" letter-spacing="1.2" fill="#d9e7ff">75%酒精　广谱杀菌</text>',
+'<rect x="150" y="262" width="18" height="11" rx="3" fill="#ffffff" opacity="0.82"/>',
+'<rect x="164" y="254" width="46" height="21" rx="6" fill="#ffffff" opacity="0.95"/>',
+'<rect x="178" y="275" width="18" height="14" fill="#ffffff" opacity="0.95"/>',
+'<rect x="168" y="289" width="64" height="99" rx="12" fill="#ffffff" opacity="0.95"/>',
+'<rect x="174" y="318" width="52" height="54" rx="7" fill="#1550b8"/>',
+'<text x="200" y="344" text-anchor="middle" font-size="17" font-weight="800" fill="#ffffff">75%</text>',
+'<text x="200" y="358" text-anchor="middle" font-size="7.5" fill="#c9dcff">酒精消毒喷雾</text>',
+'<rect width="400" height="400" filter="url(#c31p_gr)" opacity="0.05"/>',
+'</svg>'
+].join('');
+
+function imgsOf(c){
+  return (c && c.input && Array.isArray(c.input.images)) ? c.input.images : [];
+}
+/* ===== 可复用矢量材料图模板 =====
+   金标只给文字描述，这里按材料类型套版式、把描述文字排进去，生成「一眼能认出这是份什么材料」的示意图。
+   实拍主图不硬画实物，只做中性占位。带手绘专用图（MATERIAL_ART）的优先用专用图，其余按类型兜底套模板。 */
+function matSegs(text){
+  return String(text || '').split(/[；;\n]/).map(function(s){ return s.trim(); }).filter(Boolean);
+}
+function matPick(text, keys){
+  for (let i = 0; i < keys.length; i++){
+    const m = String(text || '').match(new RegExp(keys[i] + '[：:＝=]?\\s*([^；;。]+)'));
+    if (m && m[1]) return m[1].trim();
+  }
+  return '';
+}
+/* 按每行 per 字硬折行，最多 max 行（中文等宽，够用） */
+function matLines(text, per, max){
+  const s = String(text || '').trim(), out = [];
+  for (let i = 0; i < s.length && out.length < max; i += per) out.push(s.slice(i, i + per));
+  if (s.length > per * max && out.length){
+    out[out.length - 1] = out[out.length - 1].slice(0, Math.max(1, per - 1)) + '…';
+  }
+  return out;
+}
+function matTxt(lines, x, y, lh, size, fill, weight, anchor){
+  return lines.map(function(t, i){
+    return '<text x="' + x + '" y="' + (y + i * lh) + '" font-size="' + size + '"'
+      + (weight ? ' font-weight="' + weight + '"' : '')
+      + (anchor ? ' text-anchor="' + anchor + '"' : '')
+      + ' fill="' + fill + '">' + esc(t) + '</text>';
+  }).join('');
+}
+function matSvg(label, inner){
+  return '<svg viewBox="0 0 400 300" width="520" height="390" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="' + esc(label) + '（示意）">'
+    + inner + '</svg>';
+}
+/* ===== 共用质感件 =====
+   同一页会同时渲染多张材料图，defs 的 id 必须逐个唯一，否则后面的图会串用前一张的渐变 / 滤镜。
+   纸张颗粒用来消掉纯矢量的塑料感——极低透明度，只当质感，不挡内容。 */
+let matUidN = 0;
+function matUid(){ matUidN++; return 'mz' + matUidN; }
+function matGrainDef(u, freq){
+  return '<filter id="' + u + '" x="0" y="0" width="100%" height="100%">'
+    + '<feTurbulence type="fractalNoise" baseFrequency="' + freq + '" numOctaves="3" stitchTiles="stitch"/>'
+    + '<feColorMatrix type="saturate" values="0"/></filter>';
+}
+function matGrainRect(u, op){
+  return '<rect width="400" height="300" filter="url(#' + u + ')" opacity="' + op + '"/>';
+}
+/* 版式一：检测报告 */
+function matArtReport(im){
+  const d = im.description || '';
+  const no   = matPick(d, ['报告编号', '编号']) || 'NO.2024001';
+  const org  = matPick(d, ['委托单位', '委托方']);
+  const smp  = matPick(d, ['样品名称', '样品']);
+  const item = matPick(d, ['检测项目', '检验项目']);
+  const date = matPick(d, ['检测日期', '日期']);
+  const res  = matPick(d, ['检验结论', '结论']) || '合格';
+  const rows = [];
+  if (org)  rows.push(['委托单位', org]);
+  if (smp)  rows.push(['样品名称', smp]);
+  if (item) rows.push(['检测项目', item]);
+  if (date) rows.push(['检测日期', date]);
+  const u = matUid();
+  const rowSvg = rows.slice(0, 4).map(function(r, i){
+    const y = 88 + i * 25;
+    return (i % 2 ? '<rect x="22" y="' + (y - 14) + '" width="356" height="24" fill="#f7fafd"/>' : '')
+      + '<text x="30" y="' + y + '" font-size="8" fill="#8b96a8">' + esc(r[0]) + '</text>'
+      + '<text x="96" y="' + y + '" font-size="9.5" font-weight="500" fill="#22304a">' + esc(r[1].slice(0, 22)) + '</text>'
+      + '<line x1="22" y1="' + (y + 8) + '" x2="378" y2="' + (y + 8) + '" stroke="#eaeff7"/>';
+  }).join('');
+  const bodyY = 88 + Math.min(rows.length, 4) * 25 + 12;
+  const rest = rows.length ? matSegs(d).slice(1) : matSegs(d);
+  return matSvg('检测报告', [
+    '<defs>',
+    '<linearGradient id="' + u + 'hd" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#f9fbfe"/><stop offset="1" stop-color="#edf2f9"/></linearGradient>',
+    '<radialGradient id="' + u + 'sl" cx="0.5" cy="0.5" r="0.5">',
+    '<stop offset="0" stop-color="#c0281f" stop-opacity="0.15"/><stop offset="1" stop-color="#c0281f" stop-opacity="0.02"/></radialGradient>',
+    matGrainDef(u + 'gr', '0.9'),
+    '</defs>',
+    '<rect width="400" height="300" fill="#ffffff"/>',
+    '<rect width="400" height="50" fill="url(#' + u + 'hd)"/>',
+    '<rect y="48.6" width="400" height="1.4" fill="#d5deec"/>',
+    '<rect width="4.5" height="50" fill="#2f6fd0"/>',
+    '<text x="24" y="25" font-size="14.5" font-weight="700" fill="#132343" letter-spacing="2.6">检 测 报 告</text>',
+    '<text x="24" y="39" font-size="6.6" letter-spacing="2.6" fill="#9aa6b8">TEST REPORT · 第三方检验检测机构出具</text>',
+    '<text x="378" y="20" text-anchor="end" font-size="7" fill="#9aa6b8">报告编号</text>',
+    '<text x="378" y="35" text-anchor="end" font-size="9.5" font-weight="700" fill="#2b3a58">' + esc(no) + '</text>',
+    rowSvg,
+    matTxt(matLines(rest.join('；'), 30, 4), 30, bodyY, 15, 8.5, '#5b6779'),
+    '<line x1="22" y1="240" x2="378" y2="240" stroke="#e7ecf4"/>',
+    '<text x="30" y="260" font-size="8" fill="#8b96a8">检验结论</text>',
+    '<text x="96" y="261" font-size="12.5" font-weight="700" fill="#1a7d4c">' + esc(res.slice(0, 10)) + '</text>',
+    '<g transform="translate(324,232)">',
+    '<circle r="42" fill="url(#' + u + 'sl)"/>',
+    '<circle r="42" fill="none" stroke="#c0281f" stroke-width="1.9" opacity="0.64"/>',
+    '<circle r="34.5" fill="none" stroke="#c0281f" stroke-width="0.8" stroke-dasharray="2.6 2.6" opacity="0.48"/>',
+    '<text y="-6" text-anchor="middle" font-size="13.5" font-weight="800" fill="#c0281f" opacity="0.82">CMA</text>',
+    '<text y="7" text-anchor="middle" font-size="6" fill="#c0281f" opacity="0.7">201819046305</text>',
+    '<text y="18" text-anchor="middle" font-size="5.4" fill="#c0281f" opacity="0.64">检验检测机构资质认定</text>',
+    '</g>',
+    '<line x1="0" y1="274" x2="400" y2="274" stroke="#e8ecf3"/>',
+    '<text x="24" y="290" font-size="7" fill="#a9b4c4">本报告仅对来样负责 · 未经同意不得部分复制</text>',
+    matGrainRect(u + 'gr', '0.05')
+  ].join(''));
+}
+/* 版式二：资质证书 / 授权书 / 报关单
+   做成「像真证书」的文档：金色纹饰双击边 + 标题带 + 正文段落 + 数据行 + 签发栏 + 压章。
+   同一版式承载报关单/授权书/专利证书，抬头按材料形态换字。 */
+function matArtCert(im){
+  const d = im.description || '';
+  const org = matPick(d, ['发证机构', '授权方', '申请人', '委托单位', '品牌方', '申报口岸', '被授权方']);
+  const no  = matPick(d, ['证书编号', '专利号', '证号', '编号', '报关单号']);
+  const st  = matPick(d, ['状态', '有效期', '原产国', '采购地', '截止日期']);
+  const rows = [];
+  if (org) rows.push(['持证主体', org]);
+  if (st)  rows.push(['有效状态', st]);
+  const title = /报关单/.test(d) ? '报 关 单'
+    : (/授权书/.test(d) ? '授 权 书'
+    : (/专利证书/.test(d) ? '专 利 证 书' : '资 质 证 书'));
+  const u = matUid();
+  const rowSvg = rows.slice(0, 3).map(function(r, i){
+    const y = 176 + i * 26;
+    return (i % 2 ? '<rect x="68" y="' + (y - 15) + '" width="264" height="24" rx="3" fill="#faf5e8"/>' : '')
+      + '<text x="78" y="' + y + '" font-size="8.4" fill="#a89055">' + esc(r[0]) + '</text>'
+      + '<line x1="143" y1="' + (y - 11) + '" x2="143" y2="' + (y + 4) + '" stroke="#eaddbc"/>'
+      + '<text x="152" y="' + y + '" font-size="9.6" font-weight="600" fill="#4c3d15">' + esc(r[1].slice(0, 18)) + '</text>';
+  }).join('');
+  return matSvg(title.replace(/ /g, ''), [
+    '<defs>',
+    '<linearGradient id="' + u + 'pg" x1="0" y1="0" x2="1" y2="1">',
+    '<stop offset="0" stop-color="#fffdf7"/><stop offset="0.55" stop-color="#fdf9ee"/><stop offset="1" stop-color="#f4ecd6"/></linearGradient>',
+    '<linearGradient id="' + u + 'gd" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#d8b661"/><stop offset="0.45" stop-color="#8a6d21"/><stop offset="1" stop-color="#c19a44"/></linearGradient>',
+    '<linearGradient id="' + u + 'band" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#f7f1df"/><stop offset="1" stop-color="#eee4ca"/></linearGradient>',
+    '<radialGradient id="' + u + 'sl" cx="0.5" cy="0.5" r="0.5">',
+    '<stop offset="0" stop-color="#c0281f" stop-opacity="0.20"/><stop offset="1" stop-color="#c0281f" stop-opacity="0.02"/></radialGradient>',
+    matGrainDef(u + 'gr', '0.85'),
+    '</defs>',
+    '<rect width="400" height="300" fill="url(#' + u + 'pg)"/>',
+    '<rect x="12" y="12" width="376" height="276" fill="none" stroke="#cbb072" stroke-width="2.4"/>',
+    '<rect x="18.5" y="18.5" width="363" height="263" fill="none" stroke="#e3d4ab"/>',
+    '<rect x="22.5" y="22.5" width="355" height="255" fill="none" stroke="#efe6cd" stroke-width="0.8"/>',
+    '<path d="M12 40 h26 M12 12 v28 M388 40 h-26 M388 12 v28 M12 260 h26 M12 288 v-28 M388 260 h-26 M388 288 v-28" stroke="#cbb072" stroke-width="2.4" fill="none"/>',
+    '<path d="M25 37 h14 M25 25 v12 M375 37 h-14 M375 25 v12 M25 263 h14 M25 275 v-12 M375 263 h-14 M375 275 v-12" stroke="#dcc78e" fill="none"/>',
+    '<rect x="52" y="40" width="296" height="46" fill="url(#' + u + 'band)" stroke="#e0cfa2"/>',
+    '<text x="200" y="62" text-anchor="middle" font-size="17.5" font-weight="700" fill="url(#' + u + 'gd)" letter-spacing="5">' + title + '</text>',
+    '<text x="200" y="77" text-anchor="middle" font-size="5.8" letter-spacing="2.4" fill="#b6a275">CERTIFICATE OF QUALIFICATION</text>',
+    matTxt(matLines(matSegs(d).join('；'), 25, 3), 200, 106, 15, 8.4, '#9a8248', '', 'middle'),
+    '<text x="368" y="112" text-anchor="end" font-size="6.8" fill="#b6a275">证书编号</text>',
+    '<text x="368" y="123" text-anchor="end" font-size="8.8" font-weight="700" fill="#8a6d21">' + esc(no || '—') + '</text>',
+    rowSvg,
+    '<line x1="46" y1="252" x2="158" y2="252" stroke="#cbb072"/>',
+    '<text x="46" y="246" font-size="7.4" fill="#a89055">发证单位（盖章）</text>',
+    '<text x="46" y="264" font-size="6.4" fill="#c0b088">ISSUING AUTHORITY</text>',
+    '<line x1="252" y1="252" x2="354" y2="252" stroke="#cbb072"/>',
+    '<text x="252" y="246" font-size="7.4" fill="#a89055">签发日期</text>',
+    '<text x="252" y="264" font-size="6.4" fill="#c0b088">DATE OF ISSUE</text>',
+    '<g transform="translate(300,238)">',
+    '<circle r="32" fill="url(#' + u + 'sl)"/>',
+    '<circle r="32" fill="none" stroke="#c0281f" stroke-width="2.4" opacity="0.55"/>',
+    '<circle r="25" fill="none" stroke="#c0281f" stroke-width="0.7" stroke-dasharray="2.2 2.2" opacity="0.42"/>',
+    '<text y="-2" text-anchor="middle" font-size="9" font-weight="800" fill="#c0281f" opacity="0.64">专用章</text>',
+    '<text y="10" text-anchor="middle" font-size="5.4" fill="#c0281f" opacity="0.55">SEAL</text>',
+    '</g>',
+    matGrainRect(u + 'gr', '0.05')
+  ].join(''));
+}
+/* 版式三：宣传图 / 带叠加文案的主图（主视觉） */
+function matArtPromo(im){
+  const d = im.description || '';
+  /* 把描述里所有「」引号内容都抠出来：第一个当主标（大字），其余当副标。
+     这样「大字『到手价99元』+ 灰色小字『需PLUS会员…』」这类断裂能原样复现在图上。 */
+  const qs = (d.match(/[「『][^」』]+[」』]/g) || []).map(function(s){ return s.replace(/[「」『』]/g, '').trim(); });
+  const segs = matSegs(d);
+  let head = qs.length ? qs[0] : (matPick(d, ['大字', '主标']) || segs[0] || '宣传主张');
+  head = String(head).replace(/^(大字|主标|主图|副标|醒目|小字)[：:]?/, '').replace(/[「」『』"]/g, '').trim();
+  if (head.length > 18) head = head.slice(0, 18);
+  const size = head.length <= 6 ? 42 : (head.length <= 9 ? 32 : (head.length <= 13 ? 26 : 20));
+  let subs = qs.slice(1, 3);
+  if (!subs.length) subs = segs.filter(function(s){ return s.indexOf(head) < 0; }).slice(0, 2);
+  subs = subs.map(function(s){ return s.length > 22 ? s.slice(0, 22) + '…' : s; });
+  const u = matUid();
+  return matSvg('宣传图', [
+    '<defs>',
+    '<linearGradient id="' + u + 'bg" x1="0" y1="0" x2="1" y2="1">',
+    '<stop offset="0" stop-color="#2f74e6"/><stop offset="0.52" stop-color="#1550b8"/><stop offset="1" stop-color="#072868"/></linearGradient>',
+    '<radialGradient id="' + u + 'gl" cx="0.5" cy="0.26" r="0.7">',
+    '<stop offset="0" stop-color="#ffffff" stop-opacity="0.3"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>',
+    '<linearGradient id="' + u + 'sw" x1="0" y1="0" x2="1" y2="1">',
+    '<stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/><stop offset="0.45" stop-color="#ffffff" stop-opacity="0.03"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>',
+    '<filter id="' + u + 'sh" x="-25%" y="-45%" width="150%" height="210%">',
+    '<feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#03123a" flood-opacity="0.42"/></filter>',
+    matGrainDef(u + 'gr', '0.9'),
+    '</defs>',
+    '<rect width="400" height="300" fill="url(#' + u + 'bg)"/>',
+    '<rect width="400" height="300" fill="url(#' + u + 'gl)"/>',
+    '<path d="M400 0 L400 300 L150 300 Z" fill="url(#' + u + 'sw)"/>',
+    '<circle cx="344" cy="56" r="82" fill="#ffffff" opacity="0.055"/>',
+    '<circle cx="42" cy="266" r="98" fill="#ffffff" opacity="0.04"/>',
+    '<rect x="22" y="19" width="102" height="23" rx="11.5" fill="#ffffff" opacity="0.15"/>',
+    '<rect x="22" y="19" width="102" height="23" rx="11.5" fill="none" stroke="#ffffff" stroke-opacity="0.3"/>',
+    '<text x="73" y="34.5" text-anchor="middle" font-size="10.5" font-weight="650" fill="#ffffff">商品宣传</text>',
+    '<g filter="url(#' + u + 'sh)">',
+    '<text x="200" y="' + (subs.length ? 148 : 166) + '" text-anchor="middle" font-size="' + size + '" font-weight="800" fill="#ffffff" stroke="#ffc94d" stroke-width="1.5" paint-order="stroke">' + esc(head) + '</text>',
+    '</g>',
+    matTxt(subs, 200, 198, 24, 12, '#dcebff', 500, 'middle'),
+    '<rect y="262" width="400" height="38" fill="#04143f" opacity="0.16"/>',
+    '<text x="200" y="281" text-anchor="middle" font-size="7.6" fill="#ffffff" opacity="0.5" letter-spacing="0.5">（宣传图示意 · 原图见商家上传）</text>',
+    matGrainRect(u + 'gr', '0.05')
+  ].join(''));
+}
+/* 版式四：参数栏 / 成分表截图（还原成详情页里的一块白卡，不是一张裸表格） */
+function matArtSpec(im){
+  const segs = matSegs(im.description || '');
+  const rows = [];
+  segs.forEach(function(s){
+    const m = s.match(/^([^：:（(]{1,12})[：:](.+)$/);
+    if (m) rows.push([m[1].trim(), m[2].trim()]);
+  });
+  if (!rows.length){
+    matLines(segs.join('；'), 24, 6).forEach(function(t){ rows.push(['', t]); });
+  }
+  const u = matUid();
+  const rowSvg = rows.slice(0, 7).map(function(r, i){
+    const y = 106 + i * 25;
+    return (i % 2 ? '<rect x="26" y="' + (y - 15) + '" width="348" height="24" rx="3" fill="#f6f9fc"/>' : '')
+      + (r[0] ? '<text x="36" y="' + y + '" font-size="9" fill="#8b96a8">' + esc(r[0]) + '</text>' : '')
+      + '<text x="' + (r[0] ? 132 : 36) + '" y="' + y + '" font-size="9.5" font-weight="500" fill="#22304a">' + esc(r[1].slice(0, 20)) + '</text>';
+  }).join('');
+  return matSvg('参数栏截图', [
+    '<defs>',
+    '<linearGradient id="' + u + 'pg" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#eff3f9"/><stop offset="1" stop-color="#dde5f0"/></linearGradient>',
+    '<filter id="' + u + 'sh" x="-20%" y="-20%" width="140%" height="155%">',
+    '<feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#33445e" flood-opacity="0.17"/></filter>',
+    matGrainDef(u + 'gr', '1.05'),
+    '</defs>',
+    '<rect width="400" height="300" fill="url(#' + u + 'pg)"/>',
+    '<g filter="url(#' + u + 'sh)"><rect x="18" y="32" width="364" height="236" rx="10" fill="#ffffff"/></g>',
+    '<path d="M18 42 a10 10 0 0 1 10 -10 h344 a10 10 0 0 1 10 10 v36 h-364 z" fill="#f5f8fc"/>',
+    '<line x1="18" y1="78" x2="382" y2="78" stroke="#e9eef6"/>',
+    '<rect x="36" y="46" width="3.6" height="16" rx="1.8" fill="#2f6fd0"/>',
+    '<text x="48" y="59" font-size="12.5" font-weight="700" fill="#16233b">商品参数 / 成分表</text>',
+    '<text x="366" y="58" text-anchor="end" font-size="7.6" fill="#a9b4c4">详情页截图</text>',
+    rowSvg,
+    '<text x="200" y="292" text-anchor="middle" font-size="7.4" fill="#a9b4c4">参数栏示意 · 以商家上传原图为准</text>',
+    matGrainRect(u + 'gr', '0.05')
+  ].join(''));
+}
+/* 版式五：吊牌 / 洗唛（放在织物底上的一张实物吊牌） */
+function matArtTag(im){
+  const lines = matLines(matSegs(im.description || '').join('；'), 13, 5);
+  const u = matUid();
+  return matSvg('吊牌洗唛', [
+    '<defs>',
+    '<linearGradient id="' + u + 'fg" x1="0" y1="0" x2="1" y2="1">',
+    '<stop offset="0" stop-color="#eaedf3"/><stop offset="1" stop-color="#d4dbe6"/></linearGradient>',
+    '<linearGradient id="' + u + 'cd" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f1f4f9"/></linearGradient>',
+    '<linearGradient id="' + u + 'ey" x1="0" y1="0" x2="1" y2="1">',
+    '<stop offset="0" stop-color="#e9eef5"/><stop offset="0.5" stop-color="#b6c1d2"/><stop offset="1" stop-color="#dfe6ef"/></linearGradient>',
+    '<filter id="' + u + 'sh" x="-30%" y="-30%" width="160%" height="175%">',
+    '<feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#4a5c78" flood-opacity="0.26"/></filter>',
+    '<pattern id="' + u + 'wv" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">',
+    '<line x1="0" y1="0" x2="0" y2="8" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2"/></pattern>',
+    matGrainDef(u + 'gr', '0.8'),
+    '</defs>',
+    '<rect width="400" height="300" fill="url(#' + u + 'fg)"/>',
+    '<rect width="400" height="300" fill="url(#' + u + 'wv)"/>',
+    '<g filter="url(#' + u + 'sh)">',
+    '<path d="M140 40 h120 a10 10 0 0 1 10 10 v192 a10 10 0 0 1 -10 10 h-120 a10 10 0 0 1 -10 -10 v-192 a10 10 0 0 1 10 -10 z" fill="url(#' + u + 'cd)"/>',
+    '</g>',
+    '<path d="M140 40 h120 a10 10 0 0 1 10 10 v192 a10 10 0 0 1 -10 10 h-120 a10 10 0 0 1 -10 -10 v-192 a10 10 0 0 1 10 -10 z" fill="none" stroke="#c4cede"/>',
+    '<circle cx="200" cy="58" r="8" fill="url(#' + u + 'ey)"/>',
+    '<circle cx="200" cy="58" r="4.4" fill="#eef2f8"/>',
+    '<line x1="150" y1="82" x2="250" y2="82" stroke="#e2e8f1"/>',
+    matTxt(lines, 200, 116, 23, 10.5, '#33415c', 650, 'middle'),
+    '<line x1="150" y1="226" x2="250" y2="226" stroke="#e2e8f1"/>',
+    '<text x="200" y="243" text-anchor="middle" font-size="7.4" fill="#a9b4c4">面料吊牌 / 洗唛（示意）</text>',
+    matGrainRect(u + 'gr', '0.05')
+  ].join(''));
+}
+/* 版式六：包装标签 / 外袋（袋身的受光与高光，消掉平涂感） */
+function matArtPack(im){
+  const lines = matLines(matSegs(im.description || '').join('；'), 15, 6);
+  const u = matUid();
+  return matSvg('包装标签', [
+    '<defs>',
+    '<linearGradient id="' + u + 'bg" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#e8edf5"/><stop offset="1" stop-color="#d2dae7"/></linearGradient>',
+    '<linearGradient id="' + u + 'pg" x1="0" y1="0" x2="1" y2="0">',
+    '<stop offset="0" stop-color="#dee5ef"/><stop offset="0.32" stop-color="#fbfcfe"/><stop offset="1" stop-color="#cbd5e3"/></linearGradient>',
+    '<linearGradient id="' + u + 'lb" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f3f6fb"/></linearGradient>',
+    '<filter id="' + u + 'sh" x="-30%" y="-30%" width="160%" height="175%">',
+    '<feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#41536e" flood-opacity="0.24"/></filter>',
+    matGrainDef(u + 'gr', '0.95'),
+    '</defs>',
+    '<rect width="400" height="300" fill="url(#' + u + 'bg)"/>',
+    '<g filter="url(#' + u + 'sh)">',
+    '<path d="M96 66 q104 -30 208 0 v186 q-104 26 -208 0 z" fill="url(#' + u + 'pg)"/>',
+    '</g>',
+    '<path d="M96 66 q104 -30 208 0 v20 q-104 26 -208 0 z" fill="#c9d3e2" opacity="0.75"/>',
+    '<path d="M96 66 q104 -30 208 0" fill="none" stroke="#aebacc"/>',
+    '<path d="M300 120 q10 72 -6 146" stroke="#ffffff" stroke-opacity="0.34" stroke-width="9" fill="none" stroke-linecap="round"/>',
+    '<rect x="118" y="112" width="164" height="116" rx="9" fill="url(#' + u + 'lb)" stroke="#dde4ee"/>',
+    '<rect x="118" y="112" width="164" height="4" rx="2" fill="#2f6fd0" opacity="0.5"/>',
+    matTxt(lines, 200, 142, 21, 10, '#22304a', 650, 'middle'),
+    '<text x="200" y="284" text-anchor="middle" font-size="7.4" fill="#a9b4c4">包装标签（示意）</text>',
+    matGrainRect(u + 'gr', '0.05')
+  ].join(''));
+}
+/* ===== 实拍图元件：按描述画出具象的商品轮廓 =====
+   金标只有文字描述、没有真实图源。这里按关键词选一个「像实物」的造型（瓶/管/袋/衣物/纸盒），
+   把商品名印在标签上；认不出品类的兜底纸盒。是示意图，不冒充商家原图。 */
+function phName(d){
+  const head = String(d || '').split(/[，,；;：:（(]/)[0];
+  const s = head.replace(/商品|实拍|主图|图片|特写|截图|照片|挂拍|平铺|正面|模糊|低清|不清|示意|素材|图/g, '').trim();
+  return (s.length >= 2 && s.length <= 7 && !/\d/.test(s)) ? s : '';
+}
+function phTxt(cx, y, nm, maxW){
+  if (!nm) return '';
+  const fs = Math.max(6.8, Math.min(13, (maxW * 0.95) / Math.max(2, nm.length)));
+  return '<text x="' + cx + '" y="' + y + '" text-anchor="middle" font-size="' + fs.toFixed(1)
+    + '" font-weight="700" fill="#ffffff">' + esc(nm) + '</text>';
+}
+/* 瓶：瓶身圆角 + 肩线 + 颈 + 泵头喷嘴 + 标签 + 高光 + 落地影 */
+function phBottle(u, cx, by, w, h, nm){
+  const x = cx - w / 2, ty = by - h;
+  const r = Math.min(13, w * 0.2), nw = Math.max(9, w * 0.3);
+  const bodyTop = ty + h * 0.3, capH = Math.max(10, h * 0.085);
+  const lx = x + w * 0.12, ly = bodyTop + h * 0.17, lw = w * 0.76, lh = h * 0.45;
+  return ''
+    + '<ellipse cx="' + cx + '" cy="' + (by + 2) + '" rx="' + (w * 0.66).toFixed(1) + '" ry="' + (w * 0.15).toFixed(1) + '" fill="#8fa2bd" opacity="0.17"/>'
+    + '<path d="M' + x + ' ' + bodyTop + ' L' + (cx - nw) + ' ' + (ty + h * 0.16) + ' L' + (cx + nw) + ' ' + (ty + h * 0.16) + ' L' + (x + w) + ' ' + bodyTop + ' Z" fill="url(#' + u + 'gl)"/>'
+    + '<rect x="' + x + '" y="' + bodyTop + '" width="' + w + '" height="' + (by - bodyTop) + '" rx="' + r.toFixed(1) + '" fill="url(#' + u + 'gl)" stroke="#b9c9de" stroke-width="1"/>'
+    + '<rect x="' + (cx - nw * 0.34) + '" y="' + (ty + h * 0.06) + '" width="' + (nw * 0.68) + '" height="' + (h * 0.11) + '" fill="#c9d7e8"/>'
+    + '<rect x="' + (cx - nw * 1.05) + '" y="' + (ty + h * 0.005) + '" width="' + (nw * 2.1) + '" height="' + capH + '" rx="' + (capH * 0.34).toFixed(1) + '" fill="#b3c6de" stroke="#9db1cb"/>'
+    + '<path d="M' + (cx + nw * 1.05) + ' ' + (ty + capH * 0.38) + ' q' + (nw * 1.15) + ' ' + (capH * 0.12) + ' ' + (nw * 0.72) + ' ' + (capH * 0.78) + '" fill="none" stroke="#a3b8d2" stroke-width="' + Math.max(3, w * 0.085).toFixed(1) + '" stroke-linecap="round"/>'
+    + '<path d="M' + (x + w * 0.19) + ' ' + (bodyTop + h * 0.12) + ' v' + (h * 0.52) + '" stroke="#ffffff" stroke-opacity="0.72" stroke-width="' + Math.max(3.5, w * 0.1).toFixed(1) + '" stroke-linecap="round" fill="none"/>'
+    + '<rect x="' + lx + '" y="' + ly + '" width="' + lw + '" height="' + lh + '" rx="' + Math.min(7, lw * 0.16) + '" fill="url(#' + u + 'lb)"/>'
+    + phTxt(cx, ly + lh * 0.44, nm, lw)
+    + '<line x1="' + (lx + lw * 0.18) + '" y1="' + (ly + lh * 0.66) + '" x2="' + (lx + lw * 0.82) + '" y2="' + (ly + lh * 0.66) + '" stroke="#ffffff" stroke-opacity="0.4"/>'
+    + (nm ? '<text x="' + cx + '" y="' + (ly + lh * 0.88) + '" text-anchor="middle" font-size="' + Math.max(5.4, lw * 0.13).toFixed(1) + '" fill="#c9dcff">净含量</text>' : '');
+}
+/* 管：顶部压边 + 胶囊管身 + 底部旋盖 + 标签 + 高光 */
+function phTube(u, cx, by, w, h, nm){
+  const x = cx - w / 2, ty = by - h;
+  const capH = Math.max(9, h * 0.12), bodyTop = ty + h * 0.075, bodyH = by - capH - bodyTop;
+  const lx = x + w * 0.1, ly = bodyTop + bodyH * 0.2, lw = w * 0.8, lh = bodyH * 0.56;
+  return ''
+    + '<ellipse cx="' + cx + '" cy="' + (by + 2) + '" rx="' + (w * 0.62).toFixed(1) + '" ry="' + (w * 0.14).toFixed(1) + '" fill="#8fa2bd" opacity="0.17"/>'
+    + '<rect x="' + (x + w * 0.16) + '" y="' + ty + '" width="' + (w * 0.68) + '" height="' + (h * 0.075).toFixed(1) + '" rx="1.6" fill="#e2e9f3" stroke="#c3cfe0"/>'
+    + '<line x1="' + (x + w * 0.2) + '" y1="' + (ty + h * 0.022) + '" x2="' + (x + w * 0.8) + '" y2="' + (ty + h * 0.022) + '" stroke="#cdd8e6"/>'
+    + '<line x1="' + (x + w * 0.2) + '" y1="' + (ty + h * 0.05) + '" x2="' + (x + w * 0.8) + '" y2="' + (ty + h * 0.05) + '" stroke="#cdd8e6"/>'
+    + '<rect x="' + x + '" y="' + bodyTop + '" width="' + w + '" height="' + bodyH + '" rx="' + (w * 0.42).toFixed(1) + '" fill="url(#' + u + 'gl)" stroke="#b9c9de" stroke-width="1"/>'
+    + '<rect x="' + (x + w * 0.08) + '" y="' + (by - capH) + '" width="' + (w * 0.84) + '" height="' + capH + '" rx="' + (capH * 0.44).toFixed(1) + '" fill="#b3c6de" stroke="#9db1cb"/>'
+    + '<path d="M' + (x + w * 0.22) + ' ' + (bodyTop + bodyH * 0.14) + ' v' + (bodyH * 0.6) + '" stroke="#ffffff" stroke-opacity="0.7" stroke-width="' + Math.max(3, w * 0.1).toFixed(1) + '" stroke-linecap="round" fill="none"/>'
+    + '<rect x="' + lx + '" y="' + ly + '" width="' + lw + '" height="' + lh + '" rx="' + Math.min(7, lw * 0.16) + '" fill="url(#' + u + 'lb)"/>'
+    + phTxt(cx, ly + lh * 0.52, nm, lw)
+    + '<line x1="' + (lx + lw * 0.18) + '" y1="' + (ly + lh * 0.74) + '" x2="' + (lx + lw * 0.82) + '" y2="' + (ly + lh * 0.74) + '" stroke="#ffffff" stroke-opacity="0.4"/>';
+}
+/* 袋：软包袋身 + 顶部封边带 + 标签 + 高光 */
+function phPouch(u, cx, by, w, h, nm){
+  const x = cx - w / 2, ty = by - h, b = w * 0.11;
+  const lx = x + w * 0.14, ly = ty + h * 0.28, lw = w * 0.72, lh = h * 0.42;
+  const body = 'M' + x + ' ' + (ty + h * 0.13) + ' q0 -' + (h * 0.13) + ' ' + b + ' -' + (h * 0.13)
+    + ' h' + (w - b * 2) + ' q' + b + ' 0 ' + b + ' ' + (h * 0.13)
+    + ' q' + (w * 0.07) + ' ' + (h * 0.37) + ' 0 ' + (h * 0.74)
+    + ' q0 ' + (h * 0.13) + ' -' + b + ' ' + (h * 0.13)
+    + ' h-' + (w - b * 2) + ' q-' + b + ' 0 -' + b + ' -' + (h * 0.13)
+    + ' q-' + (w * 0.07) + ' -' + (h * 0.37) + ' 0 -' + (h * 0.74) + ' z';
+  return ''
+    + '<ellipse cx="' + cx + '" cy="' + (by + 2) + '" rx="' + (w * 0.58).toFixed(1) + '" ry="' + (w * 0.11).toFixed(1) + '" fill="#8fa2bd" opacity="0.17"/>'
+    + '<path d="' + body + '" fill="url(#' + u + 'gl)" stroke="#b9c9de" stroke-width="1"/>'
+    + '<rect x="' + (x + w * 0.04) + '" y="' + ty + '" width="' + (w * 0.92) + '" height="' + (h * 0.1).toFixed(1) + '" rx="2.4" fill="#e4eaf3" stroke="#c8d3e2"/>'
+    + '<line x1="' + (x + w * 0.1) + '" y1="' + (ty + h * 0.032) + '" x2="' + (x + w * 0.9) + '" y2="' + (ty + h * 0.032) + '" stroke="#cfd9e6"/>'
+    + '<line x1="' + (x + w * 0.1) + '" y1="' + (ty + h * 0.068) + '" x2="' + (x + w * 0.9) + '" y2="' + (ty + h * 0.068) + '" stroke="#cfd9e6"/>'
+    + '<path d="M' + (x + w * 0.2) + ' ' + (ty + h * 0.24) + ' v' + (h * 0.54) + '" stroke="#ffffff" stroke-opacity="0.7" stroke-width="' + Math.max(3, w * 0.06).toFixed(1) + '" stroke-linecap="round" fill="none"/>'
+    + '<rect x="' + lx + '" y="' + ly + '" width="' + lw + '" height="' + lh + '" rx="' + Math.min(7, lw * 0.14) + '" fill="url(#' + u + 'lb)"/>'
+    + phTxt(cx, ly + lh * 0.6, nm, lw);
+}
+/* 衣物：三层折叠堆叠 + 织物斜纹 + 中线高光 + 标签 */
+function phGarment(u, cx, by, w, h, nm){
+  const lh = h * 0.27;
+  let s = '<ellipse cx="' + cx + '" cy="' + (by + 2) + '" rx="' + (w * 0.5).toFixed(1) + '" ry="' + (w * 0.09).toFixed(1) + '" fill="#8fa2bd" opacity="0.16"/>';
+  for (let i = 0; i < 3; i++){
+    const lw = w * (1 - i * 0.08), lx = cx - lw / 2, ly = by - (i + 1) * lh - i * 2.5, r = lh * 0.3;
+    s += '<rect x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" width="' + lw.toFixed(1) + '" height="' + lh.toFixed(1) + '" rx="' + r.toFixed(1) + '" fill="url(#' + u + 'cl)" stroke="#c3ccd9"/>'
+      + '<rect x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" width="' + lw.toFixed(1) + '" height="' + lh.toFixed(1) + '" rx="' + r.toFixed(1) + '" fill="url(#' + u + 'fx)" opacity="0.5"/>'
+      + '<path d="M' + cx + ' ' + (ly + lh * 0.22).toFixed(1) + ' v' + (lh * 0.56).toFixed(1) + '" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1.6" stroke-linecap="round"/>';
+  }
+  const lx2 = cx - w * 0.3, ly2 = by - lh * 0.84, lw2 = w * 0.6, lh2 = lh * 0.58;
+  return s
+    + '<rect x="' + lx2.toFixed(1) + '" y="' + ly2.toFixed(1) + '" width="' + lw2.toFixed(1) + '" height="' + lh2.toFixed(1) + '" rx="' + Math.min(7, lw2 * 0.14) + '" fill="url(#' + u + 'lb)"/>'
+    + phTxt(cx, ly2 + lh2 * 0.66, nm, lw2);
+}
+/* 纸盒：正面 + 顶面 + 右侧面的 3D 盒 */
+function phBox(u, cx, by, w, h, nm){
+  const x = cx - w / 2, ty = by - h, d = Math.min(w * 0.26, 26);
+  const lx = x + w * 0.14, ly = ty + h * 0.22, lw = w * 0.72, lh = h * 0.4;
+  return ''
+    + '<ellipse cx="' + (cx + d * 0.35).toFixed(1) + '" cy="' + (by + 2) + '" rx="' + (w * 0.72).toFixed(1) + '" ry="' + (w * 0.12).toFixed(1) + '" fill="#8fa2bd" opacity="0.17"/>'
+    + '<path d="M' + x + ' ' + ty + ' L' + (x + d).toFixed(1) + ' ' + (ty - d).toFixed(1) + ' L' + (x + w + d).toFixed(1) + ' ' + (ty - d).toFixed(1) + ' L' + (x + w) + ' ' + ty + ' Z" fill="#f2f5f9" stroke="#c6d0de"/>'
+    + '<path d="M' + (x + w) + ' ' + ty + ' L' + (x + w + d).toFixed(1) + ' ' + (ty - d).toFixed(1) + ' L' + (x + w + d).toFixed(1) + ' ' + (by - d).toFixed(1) + ' L' + (x + w) + ' ' + by + ' Z" fill="#dbe2ec" stroke="#c6d0de"/>'
+    + '<rect x="' + x + '" y="' + ty + '" width="' + w + '" height="' + h + '" fill="url(#' + u + 'cl)" stroke="#c3ccd9"/>'
+    + '<rect x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" width="' + lw.toFixed(1) + '" height="' + lh.toFixed(1) + '" rx="' + Math.min(7, lw * 0.14) + '" fill="url(#' + u + 'lb)"/>'
+    + phTxt(cx, ly + lh * 0.62, nm, lw)
+    + '<line x1="' + (x + w * 0.14).toFixed(1) + '" y1="' + (ty + h * 0.78).toFixed(1) + '" x2="' + (x + w * 0.86).toFixed(1) + '" y2="' + (ty + h * 0.78).toFixed(1) + '" stroke="#c9d2df"/>'
+    + '<line x1="' + (x + w * 0.14).toFixed(1) + '" y1="' + (ty + h * 0.87).toFixed(1) + '" x2="' + (x + w * 0.62).toFixed(1) + '" y2="' + (ty + h * 0.87).toFixed(1) + '" stroke="#d5dde9"/>';
+}
+/* 版式七：实拍图 —— 摄影棚布景（无缝背景 + 光池 + 落地投影），
+   中间按描述画出可辨识的商品造型，商品名印在标签上；描述模糊时整张加高斯模糊，
+   呼应「模糊凭证不可直接采信」。是示意图，不冒充商家原图。 */
+function matArtPhoto(im){
+  const t = (im && im.type) || '', d = (im && im.description) || '';
+  const label = t === 'main_image' ? '实拍主图'
+    : (t === 'product_image' ? '商品实拍图'
+    : (t === 'detail_image' ? '详情图' : '实拍图'));
+  const nm = phName(d);
+  const u = matUid();
+  let kind = 'box';
+  if (/瓶|喷雾|喷剂|精华|酒|消毒|酒精|饮|乳|油|沐浴|洗发|液|浆/.test(d)) kind = 'bottle';
+  else if (/管|牙膏|洁面|膏|霜|凝胶|唇/.test(d)) kind = 'tube';
+  else if (/袋|包|补充装|试用装|湿巾|纸尿裤/.test(d)) kind = 'pouch';
+  else if (/衣|衫|裤|裙|外套|大衣|T恤|卫衣|针织|毛衣|袜|帽|围巾|护膝|护腕|被|枕|垫|四件套|皮带|真丝|桑蚕丝|面料/.test(d)) kind = 'garment';
+  const two = /两瓶|一大一小|两个|双瓶/.test(d);
+  let art;
+  if (kind === 'bottle') art = two
+    ? phBottle(u, 158, 214, 62, 132, nm) + phBottle(u, 258, 214, 44, 96, '')
+    : phBottle(u, 200, 214, 70, 148, nm);
+  else if (kind === 'tube') art = phTube(u, 200, 214, 64, 150, nm);
+  else if (kind === 'pouch') art = phPouch(u, 200, 214, 106, 134, nm);
+  else if (kind === 'garment') art = phGarment(u, 200, 214, 152, 142, nm);
+  else art = phBox(u, 200, 214, 110, 130, nm);
+  const blur = /模糊|不清|低清/.test(d);
+  return matSvg(label, [
+    '<defs>',
+    '<linearGradient id="' + u + 'bg" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#f8fbfe"/><stop offset="0.6" stop-color="#e5ecf5"/><stop offset="1" stop-color="#d0dae8"/></linearGradient>',
+    '<radialGradient id="' + u + 'lt" cx="0.5" cy="0.3" r="0.66">',
+    '<stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>',
+    '<linearGradient id="' + u + 'gl" x1="0" y1="0" x2="1" y2="0">',
+    '<stop offset="0" stop-color="#dbe5f2"/><stop offset="0.42" stop-color="#f7fafd"/><stop offset="1" stop-color="#c9d7e8"/></linearGradient>',
+    '<linearGradient id="' + u + 'lb" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#3f82dd"/><stop offset="1" stop-color="#174e9e"/></linearGradient>',
+    '<linearGradient id="' + u + 'cl" x1="0" y1="0" x2="1" y2="0">',
+    '<stop offset="0" stop-color="#eef1f6"/><stop offset="0.45" stop-color="#ffffff"/><stop offset="1" stop-color="#dfe5ee"/></linearGradient>',
+    '<pattern id="' + u + 'fx" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">',
+    '<line x1="0" y1="0" x2="0" y2="8" stroke="#8fa0b8" stroke-opacity="0.22" stroke-width="1"/></pattern>',
+    '<filter id="' + u + 'sh" x="-45%" y="-45%" width="190%" height="225%">',
+    '<feDropShadow dx="0" dy="14" stdDeviation="11" flood-color="#5b7292" flood-opacity="0.3"/></filter>',
+    (blur ? '<filter id="' + u + 'bl" x="-12%" y="-12%" width="124%" height="124%"><feGaussianBlur stdDeviation="2.8"/></filter>' : ''),
+    matGrainDef(u + 'gr', '0.95'),
+    '</defs>',
+    '<rect width="400" height="300" fill="url(#' + u + 'bg)"/>',
+    '<ellipse cx="200" cy="146" rx="198" ry="134" fill="url(#' + u + 'lt)"/>',
+    '<rect y="212" width="400" height="88" fill="#ffffff" opacity="0.36"/>',
+    '<line x1="0" y1="212" x2="400" y2="212" stroke="#b9c7da" stroke-opacity="0.55"/>',
+    (blur ? '<g filter="url(#' + u + 'bl)">' : '') + '<g filter="url(#' + u + 'sh)">' + art + '</g>' + (blur ? '</g>' : ''),
+    '<text x="20" y="270" font-size="10.5" font-weight="650" fill="#8b97a9" letter-spacing="0.6">' + esc(label) + '</text>',
+    '<text x="20" y="285" font-size="7.4" fill="#a9b4c4">原型示意 · 不还原实物</text>',
+    matGrainRect(u + 'gr', '0.045')
+  ].join(''));
+}
+/* ===== 商品造型库：把「这个商品到底长什么样」逐个画出来 =====
+   金标只给文字描述（「水龙头主图」「羊绒衫主图」），通用版式只能把它画成一个
+   纸盒或一团布，看不出商品本体。这里按每个商品的形态定制具象造型：
+   水龙头就画鹅颈龙头、空气炸锅就画带炸篮的机身、瑜伽垫就画卷起的垫子……
+   共用 pdStage 舞台（摄影棚布景 + 光池 + 落地影 + 纸张颗粒），与既有材料图观感一致。
+   注意：本段位于 let matUidN 之后，可安全调用 matUid()。 */
+function pdPal(o){
+  o = o || {};
+  return {
+    bg1: o.bg1 || '#f8fbfe', bg2: o.bg2 || '#d0dae8',
+    g1: o.g1 || '#dbe5f2', g2: o.g2 || '#f7fafd', g3: o.g3 || '#c9d7e8',
+    l1: o.l1 || '#3f82dd', l2: o.l2 || '#174e9e'
+  };
+}
+/* 舞台：400×300，产出完整 SVG。o.blur 整张加高斯模糊；o.extra 追加在模糊层之外（可保持清晰） */
+function pdStage(u, label, art, p, o){
+  o = o || {};
+  const st = '<stop offset="0" stop-color="';
+  return matSvg(label, [
+    '<defs>',
+    '<linearGradient id="' + u + 'bg" x1="0" y1="0" x2="0" y2="1">',
+    st + p.bg1 + '"/><stop offset="1" stop-color="' + p.bg2 + '"/></linearGradient>',
+    '<radialGradient id="' + u + 'lt" cx="0.5" cy="0.3" r="0.66">',
+    '<stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>',
+    '<linearGradient id="' + u + 'gl" x1="0" y1="0" x2="1" y2="0">',
+    st + p.g1 + '"/><stop offset="0.42" stop-color="' + p.g2 + '"/><stop offset="1" stop-color="' + p.g3 + '"/></linearGradient>',
+    '<linearGradient id="' + u + 'glv" x1="0" y1="0" x2="0" y2="1">',
+    st + p.g1 + '"/><stop offset="0.45" stop-color="' + p.g2 + '"/><stop offset="1" stop-color="' + p.g3 + '"/></linearGradient>',
+    '<linearGradient id="' + u + 'lb" x1="0" y1="0" x2="0" y2="1">',
+    st + p.l1 + '"/><stop offset="1" stop-color="' + p.l2 + '"/></linearGradient>',
+    '<filter id="' + u + 'sh" x="-50%" y="-50%" width="200%" height="240%">',
+    '<feDropShadow dx="0" dy="13" stdDeviation="10" flood-color="#5b7292" flood-opacity="0.3"/></filter>',
+    (o.blur ? '<filter id="' + u + 'bl" x="-14%" y="-14%" width="128%" height="128%"><feGaussianBlur stdDeviation="2.6"/></filter>' : ''),
+    matGrainDef(u + 'gr', '0.95'),
+    '</defs>',
+    '<rect width="400" height="300" fill="url(#' + u + 'bg)"/>',
+    '<ellipse cx="200" cy="146" rx="198" ry="134" fill="url(#' + u + 'lt)"/>',
+    '<rect y="212" width="400" height="88" fill="#ffffff" opacity="0.36"/>',
+    '<line x1="0" y1="212" x2="400" y2="212" stroke="#b9c7da" stroke-opacity="0.55"/>',
+    (o.blur ? '<g filter="url(#' + u + 'bl)">' : '') + '<g filter="url(#' + u + 'sh)">' + art + '</g>' + (o.blur ? '</g>' : ''),
+    (o.extra || ''),
+    '<text x="20" y="270" font-size="10.5" font-weight="650" fill="#8b97a9" letter-spacing="0.6">' + esc(label) + '</text>',
+    '<text x="20" y="285" font-size="7.4" fill="#a9b4c4">原型示意 · 不还原实物</text>',
+    matGrainRect(u + 'gr', '0.045')
+  ].join(''));
+}
+/* 木衣架（挂拍） */
+function pdHanger(cx, ty, half){
+  return '<path d="M' + cx + ' ' + (ty - 24) + ' a6 6 0 1 1 5 9" fill="none" stroke="#b98f57" stroke-width="2.4" stroke-linecap="round"/>'
+    + '<path d="M' + (cx - half) + ' ' + (ty - 2) + ' L' + cx + ' ' + (ty - 20) + ' L' + (cx + half) + ' ' + (ty - 2) + '" fill="none" stroke="#c39b63" stroke-width="4.4" stroke-linejoin="round"/>';
+}
+/* 羊毛大衣：翻领 + 双排扣 + 腰带；view=back 去扣加过肩，side 收窄 */
+function pdCoat(u, cx, by, w, h, view){
+  const ty = by - h, k = view === 'side' ? 0.72 : 1, sh = w * 0.40 * k, hem = w * 0.52 * k;
+  let s = view === 'side' ? '' : pdHanger(cx, ty, sh * 0.72);
+  s += '<path d="M' + (cx - sh) + ' ' + (ty + h * 0.10) + ' L' + (cx - sh - w * 0.13 * k) + ' ' + (ty + h * 0.68) + ' L' + (cx - sh - w * 0.02 * k) + ' ' + (ty + h * 0.74) + ' L' + (cx - sh + w * 0.06) + ' ' + (ty + h * 0.20) + ' Z" fill="url(#' + u + 'gl)" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<path d="M' + (cx + sh) + ' ' + (ty + h * 0.10) + ' L' + (cx + sh + w * 0.13 * k) + ' ' + (ty + h * 0.68) + ' L' + (cx + sh + w * 0.02 * k) + ' ' + (ty + h * 0.74) + ' L' + (cx + sh - w * 0.06) + ' ' + (ty + h * 0.20) + ' Z" fill="url(#' + u + 'gl)" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<path d="M' + (cx - sh) + ' ' + (ty + h * 0.06) + ' Q' + cx + ' ' + (ty - h * 0.05) + ' ' + (cx + sh) + ' ' + (ty + h * 0.06) + ' L' + (cx + hem) + ' ' + by + ' L' + (cx - hem) + ' ' + by + ' Z" fill="url(#' + u + 'glv)" stroke="#b3bccb" stroke-width="1"/>';
+  if (view === 'back'){
+    s += '<path d="M' + (cx - sh * 0.82) + ' ' + (ty + h * 0.20) + ' Q' + cx + ' ' + (ty + h * 0.28) + ' ' + (cx + sh * 0.82) + ' ' + (ty + h * 0.20) + '" fill="none" stroke="#a9b6c7" stroke-width="1.4"/>';
+    s += '<line x1="' + cx + '" y1="' + (ty + h * 0.30) + '" x2="' + cx + '" y2="' + by + '" stroke="#a9b6c7" stroke-width="1.1"/>';
+  } else {
+    s += '<path d="M' + cx + ' ' + (ty + h * 0.02) + ' L' + (cx - sh * 0.72) + ' ' + (ty + h * 0.08) + ' L' + (cx - sh * 0.24) + ' ' + (ty + h * 0.36) + ' Z" fill="#ffffff" opacity="0.5"/>';
+    s += '<path d="M' + cx + ' ' + (ty + h * 0.02) + ' L' + (cx + sh * 0.72) + ' ' + (ty + h * 0.08) + ' L' + (cx + sh * 0.24) + ' ' + (ty + h * 0.36) + ' Z" fill="#ffffff" opacity="0.34"/>';
+    s += '<line x1="' + cx + '" y1="' + (ty + h * 0.30) + '" x2="' + cx + '" y2="' + by + '" stroke="#a9b6c7" stroke-width="1.1"/>';
+    [0, 1, 2].forEach(function(i){
+      const yy = ty + h * (0.42 + i * 0.13);
+      s += '<circle cx="' + (cx - w * 0.07) + '" cy="' + yy + '" r="2.6" fill="#8a7355"/>'
+        + '<circle cx="' + (cx + w * 0.07) + '" cy="' + yy + '" r="2.6" fill="#8a7355"/>';
+    });
+  }
+  s += '<rect x="' + (cx - hem * 0.92) + '" y="' + (ty + h * 0.62) + '" width="' + (hem * 1.84) + '" height="' + (h * 0.072) + '" rx="3" fill="url(#' + u + 'lb)" opacity="0.92"/>';
+  s += '<rect x="' + (cx - 9) + '" y="' + (ty + h * 0.60) + '" width="18" height="' + (h * 0.105) + '" rx="2.4" fill="none" stroke="#e6d3ae" stroke-width="1.6"/>';
+  s += '<line x1="' + (cx - hem * 0.66) + '" y1="' + (ty + h * 0.78) + '" x2="' + (cx - hem * 0.30) + '" y2="' + (ty + h * 0.78) + '" stroke="#a9b6c7" stroke-width="1.4"/>';
+  s += '<line x1="' + (cx + hem * 0.30) + '" y1="' + (ty + h * 0.78) + '" x2="' + (cx + hem * 0.66) + '" y2="' + (ty + h * 0.78) + '" stroke="#a9b6c7" stroke-width="1.4"/>';
+  return s;
+}
+/* 短袖 T 恤（圆领罗纹 + 短袖 + 下摆）；hang=挂拍 */
+function pdTee(u, cx, by, w, h, hang){
+  const ty = by - h, sh = w * 0.34, hem = w * 0.30;
+  let s = hang ? pdHanger(cx, ty, sh * 0.9) : '';
+  s += '<path d="M' + (cx - sh) + ' ' + (ty + h * 0.12) + ' L' + (cx - sh - w * 0.16) + ' ' + (ty + h * 0.44) + ' L' + (cx - sh * 0.64) + ' ' + (ty + h * 0.56) + ' L' + (cx - sh * 0.44) + ' ' + (ty + h * 0.26) + ' Z" fill="url(#' + u + 'gl)" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<path d="M' + (cx + sh) + ' ' + (ty + h * 0.12) + ' L' + (cx + sh + w * 0.16) + ' ' + (ty + h * 0.44) + ' L' + (cx + sh * 0.64) + ' ' + (ty + h * 0.56) + ' L' + (cx + sh * 0.44) + ' ' + (ty + h * 0.26) + ' Z" fill="url(#' + u + 'gl)" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<path d="M' + (cx - sh) + ' ' + (ty + h * 0.10) + ' Q' + cx + ' ' + (ty - h * 0.02) + ' ' + (cx + sh) + ' ' + (ty + h * 0.10) + ' L' + (cx + hem) + ' ' + by + ' L' + (cx - hem) + ' ' + by + ' Z" fill="url(#' + u + 'glv)" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + (ty + h * 0.10) + '" rx="' + (sh * 0.56) + '" ry="' + (h * 0.075) + '" fill="#ffffff" opacity="0.7" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + (ty + h * 0.10) + '" rx="' + (sh * 0.44) + '" ry="' + (h * 0.05) + '" fill="none" stroke="#c8d2de" stroke-width="0.9"/>';
+  s += '<line x1="' + (cx - hem) + '" y1="' + (by - 3) + '" x2="' + (cx + hem) + '" y2="' + (by - 3) + '" stroke="#c3ccd8" stroke-width="1.1"/>';
+  s += '<line x1="' + (cx - sh * 0.92) + '" y1="' + (ty + h * 0.34) + '" x2="' + (cx - hem) + '" y2="' + (by - 3) + '" stroke="#cdd6e2" stroke-width="0.9"/>';
+  s += '<line x1="' + (cx + sh * 0.92) + '" y1="' + (ty + h * 0.34) + '" x2="' + (cx + hem) + '" y2="' + (by - 3) + '" stroke="#cdd6e2" stroke-width="0.9"/>';
+  return s;
+}
+/* 针织毛衣：长袖 + 罗纹领/下摆 + 绞花纹理 */
+function pdKnit(u, cx, by, w, h){
+  const ty = by - h, sh = w * 0.33, hem = w * 0.32;
+  let s = '';
+  s += '<path d="M' + (cx - sh) + ' ' + (ty + h * 0.12) + ' L' + (cx - sh - w * 0.10) + ' ' + (by - h * 0.10) + ' L' + (cx - sh + w * 0.02) + ' ' + (by - h * 0.04) + ' L' + (cx - sh * 0.60) + ' ' + (ty + h * 0.30) + ' Z" fill="url(#' + u + 'gl)" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<path d="M' + (cx + sh) + ' ' + (ty + h * 0.12) + ' L' + (cx + sh + w * 0.10) + ' ' + (by - h * 0.10) + ' L' + (cx + sh - w * 0.02) + ' ' + (by - h * 0.04) + ' L' + (cx + sh * 0.60) + ' ' + (ty + h * 0.30) + ' Z" fill="url(#' + u + 'gl)" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<path d="M' + (cx - sh) + ' ' + (ty + h * 0.10) + ' Q' + cx + ' ' + (ty - h * 0.02) + ' ' + (cx + sh) + ' ' + (ty + h * 0.10) + ' L' + (cx + hem) + ' ' + by + ' L' + (cx - hem) + ' ' + by + ' Z" fill="url(#' + u + 'glv)" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + (ty + h * 0.10) + '" rx="' + (sh * 0.50) + '" ry="' + (h * 0.062) + '" fill="none" stroke="#a9b6c7" stroke-width="3"/>';
+  for (let i = -2; i <= 2; i++){
+    const xx = cx + i * w * 0.13;
+    s += '<path d="M' + xx + ' ' + (ty + h * 0.26) + ' q6 ' + (h * 0.09) + ' 0 ' + (h * 0.16) + ' q-6 ' + (h * 0.09) + ' 0 ' + (h * 0.16) + ' q6 ' + (h * 0.09) + ' 0 ' + (h * 0.14) + '" fill="none" stroke="#aab6c6" stroke-width="1" opacity="0.5"/>';
+  }
+  for (let i = 0; i < 13; i++){
+    const xx = cx - hem * 0.90 + i * (hem * 1.8 / 12);
+    s += '<line x1="' + xx + '" y1="' + (by - h * 0.09) + '" x2="' + xx + '" y2="' + by + '" stroke="#b6c0cd" stroke-width="1" opacity="0.75"/>';
+  }
+  return s;
+}
+/* 床上四件套：床垫 + 双枕 + 被褥 + 翻边 */
+function pdBedding(u, cx, by, w, h){
+  const bw = w, x = cx - bw / 2, top = by - h * 0.56;
+  let s = '';
+  s += '<rect x="' + (x - 6) + '" y="' + (by - h * 0.16) + '" width="' + (bw + 12) + '" height="' + (h * 0.16) + '" rx="6" fill="#d9e0ea" stroke="#c2ccd9"/>';
+  s += '<rect x="' + (x + bw * 0.05) + '" y="' + (by - h * 0.74) + '" width="' + (bw * 0.42) + '" height="' + (h * 0.30) + '" rx="' + (h * 0.13) + '" fill="#f2f5f9" stroke="#c8d2de" transform="rotate(-4 ' + (x + bw * 0.26) + ' ' + (by - h * 0.59) + ')"/>';
+  s += '<rect x="' + (x + bw * 0.53) + '" y="' + (by - h * 0.74) + '" width="' + (bw * 0.42) + '" height="' + (h * 0.30) + '" rx="' + (h * 0.13) + '" fill="#f2f5f9" stroke="#c8d2de" transform="rotate(4 ' + (x + bw * 0.74) + ' ' + (by - h * 0.59) + ')"/>';
+  s += '<rect x="' + x + '" y="' + top + '" width="' + bw + '" height="' + (by - top - 4) + '" rx="8" fill="url(#' + u + 'glv)" stroke="#b3bccb"/>';
+  s += '<rect x="' + x + '" y="' + top + '" width="' + bw + '" height="' + (h * 0.13) + '" rx="8" fill="#ffffff" opacity="0.6"/>';
+  s += '<path d="M' + (x + bw * 0.16) + ' ' + (top + h * 0.22) + ' q' + (bw * 0.16) + ' ' + (h * 0.10) + ' ' + (bw * 0.30) + ' 0" fill="none" stroke="#aab6c6" stroke-width="1.2" opacity="0.55"/>';
+  s += '<path d="M' + (x + bw * 0.54) + ' ' + (top + h * 0.28) + ' q' + (bw * 0.14) + ' -' + (h * 0.09) + ' ' + (bw * 0.28) + ' 0" fill="none" stroke="#aab6c6" stroke-width="1.2" opacity="0.55"/>';
+  return s;
+}
+/* 真丝眼罩：蝶形缎面 + 绑带 + 织标 */
+function pdEyeMask(u, cx, by, w, h, tag){
+  const cy = by - h * 0.52;
+  let s = '';
+  s += '<path d="M' + (cx - w * 0.42) + ' ' + (cy - 4) + ' q-' + (w * 0.16) + ' 6 -' + (w * 0.02) + ' ' + (h * 0.12) + '" fill="none" stroke="#cdd6e2" stroke-width="4" stroke-linecap="round"/>';
+  s += '<path d="M' + (cx + w * 0.42) + ' ' + (cy - 4) + ' q' + (w * 0.16) + ' 6 ' + (w * 0.02) + ' ' + (h * 0.12) + '" fill="none" stroke="#cdd6e2" stroke-width="4" stroke-linecap="round"/>';
+  s += '<path d="M' + (cx - w * 0.44) + ' ' + (cy - 6)
+    + ' C' + (cx - w * 0.46) + ' ' + (cy - h * 0.34) + ' ' + (cx - w * 0.22) + ' ' + (cy - h * 0.40) + ' ' + (cx - w * 0.10) + ' ' + (cy - h * 0.20)
+    + ' C' + (cx - w * 0.03) + ' ' + (cy - h * 0.08) + ' ' + (cx + w * 0.03) + ' ' + (cy - h * 0.08) + ' ' + (cx + w * 0.10) + ' ' + (cy - h * 0.20)
+    + ' C' + (cx + w * 0.22) + ' ' + (cy - h * 0.40) + ' ' + (cx + w * 0.46) + ' ' + (cy - h * 0.34) + ' ' + (cx + w * 0.44) + ' ' + (cy - 6)
+    + ' C' + (cx + w * 0.42) + ' ' + (cy + h * 0.26) + ' ' + (cx + w * 0.18) + ' ' + (cy + h * 0.32) + ' ' + cx + ' ' + (cy + h * 0.14)
+    + ' C' + (cx - w * 0.18) + ' ' + (cy + h * 0.32) + ' ' + (cx - w * 0.42) + ' ' + (cy + h * 0.26) + ' ' + (cx - w * 0.44) + ' ' + (cy - 6) + ' Z"'
+    + ' fill="url(#' + u + 'glv)" stroke="#b3bccb" stroke-width="1.2"/>';
+  s += '<path d="M' + (cx - w * 0.30) + ' ' + (cy - h * 0.06) + ' q' + (w * 0.12) + ' -' + (h * 0.16) + ' ' + (w * 0.24) + ' -' + (h * 0.02) + '" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="2.4" stroke-linecap="round"/>';
+  if (tag){
+    s += '<rect x="' + (cx + w * 0.12) + '" y="' + (cy + h * 0.06) + '" width="' + (w * 0.24) + '" height="' + (h * 0.10) + '" rx="2" fill="url(#' + u + 'lb)"/>';
+    s += '<text x="' + (cx + w * 0.24) + '" y="' + (cy + h * 0.135) + '" text-anchor="middle" font-size="7" font-weight="700" fill="#ffffff">' + esc(tag) + '</text>';
+  }
+  return s;
+}
+/* 空气炸锅：把手 + 机身 + 散热纹 + 控制面板 + 炸篮抽屉 + 旋钮 + 脚 */
+function pdFryer(u, cx, by, w, h){
+  const x = cx - w * 0.34, bw = w * 0.68, ty = by - h * 0.86;
+  let s = '';
+  s += '<path d="M' + (cx - bw * 0.30) + ' ' + (ty + 8) + ' q0 -' + (h * 0.15) + ' ' + (bw * 0.30) + ' -' + (h * 0.15) + ' q' + (bw * 0.30) + ' 0 ' + (bw * 0.30) + ' ' + (h * 0.15) + '" fill="none" stroke="#3a4150" stroke-width="9" stroke-linecap="round"/>';
+  s += '<rect x="' + x + '" y="' + (ty + 10) + '" width="' + bw + '" height="' + (by - ty - 12) + '" rx="16" fill="url(#' + u + 'glv)" stroke="#3a4150" stroke-width="1.4"/>';
+  for (let i = 0; i < 5; i++){
+    s += '<line x1="' + (x + bw * 0.26) + '" y1="' + (ty + 22 + i * 5) + '" x2="' + (x + bw * 0.74) + '" y2="' + (ty + 22 + i * 5) + '" stroke="#4a5364" stroke-width="1.6" opacity="0.65"/>';
+  }
+  const dy = by - (by - ty) * 0.34;
+  s += '<line x1="' + (x + 4) + '" y1="' + dy + '" x2="' + (x + bw - 4) + '" y2="' + dy + '" stroke="#3a4150" stroke-width="1.6"/>';
+  s += '<rect x="' + (cx - bw * 0.16) + '" y="' + (dy - 4) + '" width="' + (bw * 0.32) + '" height="9" rx="4.5" fill="#4a5364"/>';
+  s += '<rect x="' + (cx - bw * 0.24) + '" y="' + (ty + h * 0.20) + '" width="' + (bw * 0.48) + '" height="' + (h * 0.13) + '" rx="5" fill="#1d2430" stroke="#5a6474" stroke-width="1"/>';
+  s += '<text x="' + (cx - bw * 0.08) + '" y="' + (ty + h * 0.295) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#7fd6ff">1500W</text>';
+  s += '<circle cx="' + (cx + bw * 0.30) + '" cy="' + (ty + h * 0.265) + '" r="7" fill="#4a5364" stroke="#6b7688"/>';
+  s += '<rect x="' + (x + bw * 0.10) + '" y="' + (by - 3) + '" width="12" height="5" rx="2" fill="#39404d"/>';
+  s += '<rect x="' + (x + bw * 0.74) + '" y="' + (by - 3) + '" width="12" height="5" rx="2" fill="#39404d"/>';
+  return s;
+}
+/* 数据线：盘绕编织线 + 两个 Type-C 金属头 */
+function pdCable(u, cx, by, w, h){
+  const cy = by - h * 0.36, R = w * 0.24, ox = cx - w * 0.10;
+  let s = '';
+  for (let i = 0; i < 3; i++){
+    const rr = R - i * 9;
+    s += '<ellipse cx="' + ox + '" cy="' + (cy + i * 2) + '" rx="' + rr + '" ry="' + (rr * 0.72) + '" fill="none" stroke="#e9edf3" stroke-width="9"/>';
+    s += '<ellipse cx="' + ox + '" cy="' + (cy + i * 2) + '" rx="' + rr + '" ry="' + (rr * 0.72) + '" fill="none" stroke="#c6cfdb" stroke-width="9" stroke-dasharray="0.9 3.4"/>';
+    s += '<ellipse cx="' + ox + '" cy="' + (cy + i * 2) + '" rx="' + rr + '" ry="' + (rr * 0.72) + '" fill="none" stroke="#b4bdca" stroke-width="1"/>';
+  }
+  s += '<path d="M' + (ox + R) + ' ' + (cy + 6) + ' q' + (w * 0.18) + ' ' + (h * 0.06) + ' ' + (w * 0.30) + ' -' + (h * 0.02) + '" fill="none" stroke="#e9edf3" stroke-width="8" stroke-linecap="round"/>';
+  s += '<path d="M' + (ox - R) + ' ' + (cy - 4) + ' q-' + (w * 0.12) + ' ' + (h * 0.06) + ' -' + (w * 0.20) + ' ' + (h * 0.12) + '" fill="none" stroke="#e9edf3" stroke-width="8" stroke-linecap="round"/>';
+  const con = function(px, py, rot){
+    return '<g transform="translate(' + px + ',' + py + ') rotate(' + rot + ')">'
+      + '<rect x="-6" y="-14" width="32" height="28" rx="8" fill="#cfd6e0" stroke="#a9b3c1" stroke-width="1"/>'
+      + '<rect x="-6" y="-9" width="10" height="18" rx="4" fill="#9aa5b4"/>'
+      + '<rect x="4" y="-7" width="18" height="14" rx="5" fill="#e6eaf0"/>'
+      + '</g>';
+  };
+  s += con(cx + w * 0.16, cy + h * 0.04, -18);
+  s += con(cx - w * 0.36, cy + h * 0.20, 158);
+  return s;
+}
+/* 皮带：皮革盘带 + 走线 + 金属扣 */
+function pdBelt(u, cx, by, w, h){
+  const cy = by - h * 0.50, rx = w * 0.26, ry = h * 0.26, sw = h * 0.17;
+  let s = '';
+  s += '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="none" stroke="#8a6a44" stroke-width="' + (sw + 2) + '"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="none" stroke="url(#' + u + 'glv)" stroke-width="' + sw + '"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="none" stroke="#e8d6bb" stroke-width="1" stroke-dasharray="3 2.2" opacity="0.85"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + (rx + sw * 0.6) + '" ry="' + (ry + sw * 0.6) + '" fill="none" stroke="#8a6a44" stroke-width="1" opacity="0.35"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + (rx - sw * 0.6) + '" ry="' + (ry - sw * 0.6) + '" fill="none" stroke="#8a6a44" stroke-width="1" opacity="0.35"/>';
+  s += '<rect x="' + (cx - 21) + '" y="' + (cy - ry - h * 0.14) + '" width="42" height="' + (h * 0.21) + '" rx="5" fill="#cfd6e0" stroke="#9aa5b4" stroke-width="1.2"/>';
+  s += '<rect x="' + (cx - 12) + '" y="' + (cy - ry - h * 0.085) + '" width="24" height="' + (h * 0.12) + '" rx="3" fill="#e6eaf0" stroke="#b4bdca"/>';
+  s += '<rect x="' + (cx - 2) + '" y="' + (cy - ry - h * 0.17) + '" width="4" height="' + (h * 0.27) + '" rx="2" fill="#aab4c2"/>';
+  return s;
+}
+/* 瑜伽垫：卷起圆柱 + 端面螺旋 + 绑带 + 侧面纹理 */
+function pdYogaMat(u, cx, by, w, h){
+  const rw = w * 0.24, ty = by - h * 0.86, x = cx - rw / 2;
+  let s = '';
+  s += '<rect x="' + x + '" y="' + ty + '" width="' + rw + '" height="' + (by - ty) + '" rx="' + (rw * 0.28) + '" fill="url(#' + u + 'glv)" stroke="#b3bccb"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + ty + '" rx="' + (rw / 2) + '" ry="' + (rw * 0.20) + '" fill="#e9edf3" stroke="#b3bccb"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + ty + '" rx="' + (rw * 0.24) + '" ry="' + (rw * 0.115) + '" fill="none" stroke="#aab6c6" stroke-width="1.2"/>';
+  s += '<rect x="' + (x - 2) + '" y="' + (ty + (by - ty) * 0.30) + '" width="' + (rw + 4) + '" height="' + (h * 0.055) + '" rx="3" fill="url(#' + u + 'lb)"/>';
+  s += '<rect x="' + (x - 2) + '" y="' + (ty + (by - ty) * 0.56) + '" width="' + (rw + 4) + '" height="' + (h * 0.055) + '" rx="3" fill="url(#' + u + 'lb)"/>';
+  for (let i = 0; i < 6; i++){
+    s += '<line x1="' + (x + rw * 0.22) + '" y1="' + (ty + (by - ty) * (0.12 + i * 0.13)) + '" x2="' + (x + rw * 0.78) + '" y2="' + (ty + (by - ty) * (0.12 + i * 0.13)) + '" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.4"/>';
+  }
+  s += '<path d="M' + (cx + rw * 0.5) + ' ' + (by - 8) + ' l' + (w * 0.20) + ' 0 l0 ' + (h * 0.045) + ' l-' + (w * 0.20) + ' 0 z" fill="#e9edf3" stroke="#b3bccb"/>';
+  return s;
+}
+/* 纸尿裤：立式软包装 + 婴儿图案 + 尺码标 + 一片展开的尿裤 */
+function pdDiaper(u, cx, by, w, h){
+  const pw = w * 0.42, ph = h * 0.80, x = cx - w * 0.30 - pw / 2, y = by - ph;
+  let s = '';
+  s += '<path d="M' + x + ' ' + (y + 12) + ' q0 -12 12 -12 h' + (pw - 24) + ' q12 0 12 12 v' + (ph - 12) + ' q0 12 -12 12 h-' + (pw - 24) + ' q-12 0 -12 -12 z" fill="url(#' + u + 'glv)" stroke="#b3bccb" stroke-width="1"/>';
+  s += '<rect x="' + (x + 5) + '" y="' + y + '" width="' + (pw - 10) + '" height="' + (h * 0.06) + '" rx="3" fill="#e4eaf3" stroke="#c8d3e2"/>';
+  s += '<circle cx="' + (x + pw / 2) + '" cy="' + (y + ph * 0.32) + '" r="' + (pw * 0.20) + '" fill="#ffffff" opacity="0.85"/>';
+  s += '<circle cx="' + (x + pw / 2 - pw * 0.075) + '" cy="' + (y + ph * 0.30) + '" r="2.2" fill="#5b7292"/>';
+  s += '<circle cx="' + (x + pw / 2 + pw * 0.075) + '" cy="' + (y + ph * 0.30) + '" r="2.2" fill="#5b7292"/>';
+  s += '<path d="M' + (x + pw / 2 - 7) + ' ' + (y + ph * 0.37) + ' q7 6 14 0" fill="none" stroke="#5b7292" stroke-width="1.6" stroke-linecap="round"/>';
+  s += '<rect x="' + (x + 6) + '" y="' + (y + ph * 0.56) + '" width="' + (pw - 12) + '" height="' + (ph * 0.18) + '" rx="4" fill="url(#' + u + 'lb)"/>';
+  s += '<text x="' + (x + pw / 2) + '" y="' + (y + ph * 0.685) + '" text-anchor="middle" font-size="13" font-weight="800" fill="#ffffff">L · 3片</text>';
+  const dx = cx + w * 0.14;
+  s += '<path d="M' + dx + ' ' + (by - h * 0.58) + ' h' + (w * 0.22) + ' l' + (w * 0.04) + ' ' + (h * 0.34) + ' q-' + (w * 0.15) + ' ' + (h * 0.09) + ' -' + (w * 0.30) + ' 0 z" fill="#f4f7fb" stroke="#c8d2de"/>';
+  s += '<path d="M' + dx + ' ' + (by - h * 0.58) + ' q' + (w * 0.11) + ' ' + (h * 0.05) + ' ' + (w * 0.22) + ' 0" fill="none" stroke="#c8d2de"/>';
+  s += '<path d="M' + (dx + w * 0.10) + ' ' + (by - h * 0.26) + ' q0 ' + (h * 0.10) + ' ' + (w * 0.01) + ' ' + (h * 0.12) + ' l' + (w * 0.05) + ' 0 q' + (w * 0.01) + ' -' + (h * 0.05) + ' 0 -' + (h * 0.12) + ' z" fill="#cfe0f2" stroke="#a9bcd2"/>';
+  return s;
+}
+/* 洗衣凝珠：透明罐 + 三腔凝珠 + 标 */
+function pdPods(u, cx, by, w, h){
+  const jw = w * 0.46, jh = h * 0.74, x = cx - jw / 2, y = by - jh;
+  let s = '';
+  s += '<rect x="' + x + '" y="' + (y + 18) + '" width="' + jw + '" height="' + (jh - 18) + '" rx="14" fill="#eef4fb" stroke="#c3cfe0" stroke-width="1.2"/>';
+  s += '<rect x="' + (x - 3) + '" y="' + y + '" width="' + (jw + 6) + '" height="20" rx="8" fill="url(#' + u + 'lb)" stroke="#9db1cb"/>';
+  s += '<line x1="' + (x - 3) + '" y1="' + (y + 14) + '" x2="' + (x + jw + 3) + '" y2="' + (y + 14) + '" stroke="#0f3c7d" stroke-opacity="0.35"/>';
+  const cols = ['#3f82dd', '#d9534f', '#4caf7d', '#e0a13a'];
+  for (let r = 0; r < 3; r++){
+    for (let c = 0; c < 3; c++){
+      const px = x + jw * (0.26 + c * 0.24), py = y + 40 + r * (h * 0.19), col = cols[(r + c) % 4], pr = jw * 0.085;
+      s += '<g opacity="0.95"><circle cx="' + px + '" cy="' + py + '" r="' + pr + '" fill="' + col + '"/>'
+        + '<circle cx="' + (px - pr * 0.7) + '" cy="' + (py - pr * 0.45) + '" r="' + (pr * 0.72) + '" fill="' + col + '" opacity="0.88"/>'
+        + '<circle cx="' + (px + pr * 0.7) + '" cy="' + (py - pr * 0.45) + '" r="' + (pr * 0.72) + '" fill="' + col + '" opacity="0.88"/>'
+        + '<circle cx="' + (px - pr * 0.35) + '" cy="' + (py - pr * 0.6) + '" r="' + (pr * 0.26) + '" fill="#ffffff" opacity="0.6"/></g>';
+    }
+  }
+  s += '<rect x="' + (x + jw * 0.10) + '" y="' + (y + 26) + '" width="' + (jw * 0.10) + '" height="' + (jh * 0.54) + '" rx="5" fill="#ffffff" opacity="0.55"/>';
+  s += '<rect x="' + (x + jw * 0.14) + '" y="' + (y + jh * 0.72) + '" width="' + (jw * 0.72) + '" height="' + (jh * 0.16) + '" rx="4" fill="url(#' + u + 'lb)"/>';
+  s += '<text x="' + cx + '" y="' + (y + jh * 0.835) + '" text-anchor="middle" font-size="11" font-weight="800" fill="#ffffff">50颗</text>';
+  return s;
+}
+/* 水龙头：底座 + 立柱 + 鹅颈出水 + 出水嘴 + 单柄（金属质感） */
+function pdFaucet(u, cx, by, w, h){
+  const baseY = by - 6, colW = w * 0.10, colX = cx - w * 0.30;
+  let s = '';
+  s += '<ellipse cx="' + colX + '" cy="' + baseY + '" rx="' + (w * 0.13) + '" ry="' + (h * 0.05) + '" fill="url(#' + u + 'gl)" stroke="#9aa5b4"/>';
+  s += '<rect x="' + (colX - w * 0.09) + '" y="' + (baseY - h * 0.05) + '" width="' + (w * 0.18) + '" height="' + (h * 0.05) + '" rx="3" fill="url(#' + u + 'gl)" stroke="#9aa5b4"/>';
+  s += '<rect x="' + (colX - colW / 2) + '" y="' + (by - h * 0.72) + '" width="' + colW + '" height="' + (h * 0.68) + '" rx="' + (colW * 0.32) + '" fill="url(#' + u + 'gl)" stroke="#9aa5b4"/>';
+  s += '<path d="M' + colX + ' ' + (by - h * 0.70) + ' L' + colX + ' ' + (by - h * 0.84) + ' q0 -' + (h * 0.12) + ' ' + (w * 0.20) + ' -' + (h * 0.12) + ' q' + (w * 0.20) + ' 0 ' + (w * 0.20) + ' ' + (h * 0.12) + '" fill="none" stroke="#9aa5b4" stroke-width="' + (colW * 1.25) + '" stroke-linecap="round"/>';
+  s += '<path d="M' + colX + ' ' + (by - h * 0.70) + ' L' + colX + ' ' + (by - h * 0.84) + ' q0 -' + (h * 0.12) + ' ' + (w * 0.20) + ' -' + (h * 0.12) + ' q' + (w * 0.20) + ' 0 ' + (w * 0.20) + ' ' + (h * 0.12) + '" fill="none" stroke="url(#' + u + 'gl)" stroke-width="' + (colW * 1.05) + '" stroke-linecap="round"/>';
+  s += '<rect x="' + (colX + w * 0.40 - colW * 0.5) + '" y="' + (by - h * 0.77) + '" width="' + colW + '" height="' + (h * 0.10) + '" rx="' + (colW * 0.3) + '" fill="url(#' + u + 'gl)" stroke="#9aa5b4"/>';
+  s += '<rect x="' + (colX + colW * 0.4) + '" y="' + (by - h * 0.56) + '" width="' + (w * 0.16) + '" height="' + (h * 0.055) + '" rx="' + (h * 0.028) + '" fill="url(#' + u + 'gl)" stroke="#9aa5b4" transform="rotate(-16 ' + colX + ' ' + (by - h * 0.53) + ')"/>';
+  s += '<line x1="' + (colX - colW * 0.22) + '" y1="' + (by - h * 0.66) + '" x2="' + (colX - colW * 0.22) + '" y2="' + (by - h * 0.14) + '" stroke="#ffffff" stroke-opacity="0.7" stroke-width="2"/>';
+  return s;
+}
+/* 坚果礼盒：开窗 3D 盒 + 果仁 + 缎带 + 标 */
+function pdGiftBox(u, cx, by, w, h){
+  const bw = w * 0.60, bh = h * 0.68, x = cx - bw / 2 - 10, ty = by - bh, d = w * 0.10;
+  let s = '';
+  s += '<path d="M' + x + ' ' + ty + ' L' + (x + d) + ' ' + (ty - d) + ' L' + (x + bw + d) + ' ' + (ty - d) + ' L' + (x + bw) + ' ' + ty + ' Z" fill="#f0d9c2" stroke="#c9ab8c"/>';
+  s += '<path d="M' + (x + bw) + ' ' + ty + ' L' + (x + bw + d) + ' ' + (ty - d) + ' L' + (x + bw + d) + ' ' + (by - d) + ' L' + (x + bw) + ' ' + by + ' Z" fill="#d9b894" stroke="#c9ab8c"/>';
+  s += '<rect x="' + x + '" y="' + ty + '" width="' + bw + '" height="' + bh + '" fill="url(#' + u + 'glv)" stroke="#c9ab8c"/>';
+  const wx = x + bw * 0.14, wy = ty + bh * 0.14, ww = bw * 0.72, wh = bh * 0.40;
+  s += '<rect x="' + wx + '" y="' + wy + '" width="' + ww + '" height="' + wh + '" rx="6" fill="#fdf6ea" stroke="#c9ab8c"/>';
+  for (let i = 0; i < 8; i++){
+    const px = wx + ww * (0.16 + (i % 4) * 0.23), py = wy + wh * (0.30 + Math.floor(i / 4) * 0.38);
+    s += '<ellipse cx="' + px + '" cy="' + py + '" rx="' + (ww * 0.075) + '" ry="' + (ww * 0.058) + '" fill="' + (i % 3 === 0 ? '#c98a4b' : '#e0b07a') + '" stroke="#b07f45" stroke-width="0.6"/>';
+  }
+  s += '<rect x="' + (x + bw * 0.16) + '" y="' + (by - bh * 0.32) + '" width="' + (bw * 0.68) + '" height="' + (bh * 0.22) + '" rx="4" fill="#3f2a18" opacity="0.86"/>';
+  s += '<text x="' + (x + bw / 2) + '" y="' + (by - bh * 0.165) + '" text-anchor="middle" font-size="11" font-weight="800" fill="#f7e6cf">每日坚果 750g</text>';
+  return s;
+}
+/* 洗发水按压瓶（用于模糊实拍） */
+function pdShampoo(u, cx, by, w, h){
+  const bw = w * 0.30, bx = cx - w * 0.06 - bw / 2, ty = by - h * 0.80;
+  let s = '';
+  s += '<path d="M' + bx + ' ' + (ty + h * 0.16) + ' q0 -' + (h * 0.10) + ' ' + (bw * 0.5) + ' -' + (h * 0.10) + ' q' + (bw * 0.5) + ' 0 ' + (bw * 0.5) + ' ' + (h * 0.10) + ' L' + (bx + bw) + ' ' + (by - 7) + ' q0 7 -8 7 L' + (bx + 8) + ' ' + by + ' q-8 0 -8 -7 Z" fill="url(#' + u + 'glv)" stroke="#2c3440" stroke-width="1"/>';
+  s += '<rect x="' + (bx + bw * 0.28) + '" y="' + (ty - h * 0.07) + '" width="' + (bw * 0.44) + '" height="' + (h * 0.10) + '" rx="' + (h * 0.032) + '" fill="#3a4150"/>';
+  s += '<rect x="' + (bx + bw * 0.16) + '" y="' + (ty - h * 0.005) + '" width="' + (bw * 0.68) + '" height="' + (h * 0.055) + '" rx="4" fill="#4a5364"/>';
+  s += '<rect x="' + (bx + bw * 0.12) + '" y="' + (ty + h * 0.28) + '" width="' + (bw * 0.76) + '" height="' + (h * 0.32) + '" rx="5" fill="url(#' + u + 'lb)"/>';
+  s += '<text x="' + (bx + bw / 2) + '" y="' + (ty + h * 0.44) + '" text-anchor="middle" font-size="10" font-weight="800" fill="#ffffff">防脱</text>';
+  s += '<line x1="' + (bx + bw * 0.24) + '" y1="' + (ty + h * 0.50) + '" x2="' + (bx + bw * 0.76) + '" y2="' + (ty + h * 0.50) + '" stroke="#ffffff" stroke-opacity="0.4"/>';
+  s += '<path d="M' + (bx + bw * 0.22) + ' ' + (ty + h * 0.20) + ' v' + (h * 0.44) + '" stroke="#ffffff" stroke-opacity="0.5" stroke-width="3" stroke-linecap="round"/>';
+  return s;
+}
+/* 买家前后对比照：两格人像 + 分隔 + 标（C 级弱证据提示） */
+function pdCompare(u, cx, by, w, h){
+  const fw = w * 0.38, fh = h * 0.72, y = by - fh, lx = cx - fw - 6, rx = cx + 6;
+  const one = function(x, dull, cap){
+    const skin = dull ? '#c9a98c' : '#f3d9c4';
+    const bg = dull ? '#9a927f' : '#e9f2fb';
+    return '<rect x="' + x + '" y="' + y + '" width="' + fw + '" height="' + fh + '" rx="6" fill="' + bg + '" stroke="#b3bccb"/>'
+      + '<circle cx="' + (x + fw / 2) + '" cy="' + (y + fh * 0.30) + '" r="' + (fw * 0.19) + '" fill="' + skin + '"/>'
+      + '<path d="M' + (x + fw * 0.50) + ' ' + (y + fh * 0.52) + ' q-' + (fw * 0.26) + ' 0 -' + (fw * 0.26) + ' ' + (fh * 0.34) + ' l' + (fw * 0.52) + ' 0 q0 -' + (fh * 0.34) + ' -' + (fw * 0.26) + ' -' + (fh * 0.34) + ' z" fill="' + skin + '"/>'
+      + '<rect x="' + x + '" y="' + (y + fh - 18) + '" width="' + fw + '" height="18" rx="0" fill="' + (dull ? '#6f6a5c' : '#1f6fb8') + '" opacity="0.9"/>'
+      + '<text x="' + (x + fw / 2) + '" y="' + (y + fh - 5) + '" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">' + esc(cap) + '</text>';
+  };
+  let s = one(lx, true, '使用前') + one(rx, false, '使用后');
+  s += '<line x1="' + cx + '" y1="' + y + '" x2="' + cx + '" y2="' + (y + fh) + '" stroke="#ffffff" stroke-width="3"/>';
+  s += '<path d="M' + (cx - 5) + ' ' + (y + fh * 0.5) + ' l10 0" stroke="#ffffff" stroke-width="2"/>';
+  s += '<text x="' + cx + '" y="' + (by - 4) + '" text-anchor="middle" font-size="7.5" fill="#a9b4c4">买家自述对比照 · C 级证据，不作为功效判定依据</text>';
+  return s;
+}
+/* 买家好评聊天截图：3 条评价气泡 + 五星 */
+function pdChat(u, cx, by, w, h){
+  const pw = w * 0.66, ph = h * 0.80, x = cx - pw / 2, y = by - ph;
+  let s = '';
+  s += '<rect x="' + x + '" y="' + y + '" width="' + pw + '" height="' + ph + '" rx="12" fill="#eef2f7" stroke="#c3cfe0"/>';
+  s += '<rect x="' + x + '" y="' + y + '" width="' + pw + '" height="' + (h * 0.10) + '" rx="12" fill="#e2e8f0"/>';
+  s += '<text x="' + (x + 12) + '" y="' + (y + h * 0.068) + '" font-size="8.5" font-weight="700" fill="#5b6b80">买家评价 · 共 3 条</text>';
+  for (let i = 0; i < 3; i++){
+    const ry = y + h * (0.17 + i * 0.24);
+    s += '<circle cx="' + (x + pw * 0.10) + '" cy="' + (ry + h * 0.05) + '" r="' + (h * 0.045) + '" fill="#c9d7e8"/>';
+    s += '<rect x="' + (x + pw * 0.19) + '" y="' + ry + '" width="' + (pw * 0.72) + '" height="' + (h * 0.16) + '" rx="7" fill="#ffffff" stroke="#d5dde9"/>';
+    s += '<text x="' + (x + pw * 0.24) + '" y="' + (ry + h * 0.052) + '" font-size="7" fill="#8a97a8">用户' + (i + 1) + '****</text>';
+    for (let j = 0; j < 5; j++){
+      s += '<text x="' + (x + pw * 0.24 + j * 9) + '" y="' + (ry + h * 0.112) + '" font-size="8" fill="#e0a13a">★</text>';
+    }
+    s += '<line x1="' + (x + pw * 0.24) + '" y1="' + (ry + h * 0.140) + '" x2="' + (x + pw * 0.82) + '" y2="' + (ry + h * 0.140) + '" stroke="#dfe5ee"/>';
+  }
+  return s;
+}
+/* 纯色短袖 T 恤（多色挂拍用，不依赖渐变） */
+function pdTeeC(cx, by, w, h, fill, stroke, hang){
+  const ty = by - h, sh = w * 0.34, hem = w * 0.30;
+  let s = hang ? pdHanger(cx, ty, sh * 0.9) : '';
+  s += '<path d="M' + (cx - sh) + ' ' + (ty + h * 0.12) + ' L' + (cx - sh - w * 0.16) + ' ' + (ty + h * 0.44) + ' L' + (cx - sh * 0.64) + ' ' + (ty + h * 0.56) + ' L' + (cx - sh * 0.44) + ' ' + (ty + h * 0.26) + ' Z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>';
+  s += '<path d="M' + (cx + sh) + ' ' + (ty + h * 0.12) + ' L' + (cx + sh + w * 0.16) + ' ' + (ty + h * 0.44) + ' L' + (cx + sh * 0.64) + ' ' + (ty + h * 0.56) + ' L' + (cx + sh * 0.44) + ' ' + (ty + h * 0.26) + ' Z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>';
+  s += '<path d="M' + (cx - sh) + ' ' + (ty + h * 0.10) + ' Q' + cx + ' ' + (ty - h * 0.02) + ' ' + (cx + sh) + ' ' + (ty + h * 0.10) + ' L' + (cx + hem) + ' ' + by + ' L' + (cx - hem) + ' ' + by + ' Z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>';
+  s += '<ellipse cx="' + cx + '" cy="' + (ty + h * 0.10) + '" rx="' + (sh * 0.52) + '" ry="' + (h * 0.07) + '" fill="none" stroke="' + stroke + '" stroke-width="2.2"/>';
+  return s;
+}
+/* 逐条登记：key = 用例id::locator，覆盖通用模板兜底 */
+function pdAdd(key, label, pal, artFn, o){
+  const u = matUid();
+  MATERIAL_ART[key] = pdStage(u, label, artFn(u), pal, o);
+}
+
+/* —— 服饰 —— */
+pdAdd('C16::图1', '商品主图 · 100% 桑蚕丝真丝眼罩',
+  pdPal({ bg1:'#fdf9f3', bg2:'#e7ddcc', g1:'#f0e7d8', g2:'#fdfbf6', g3:'#e3d8c6', l1:'#c9a24a', l2:'#8f6d2a' }),
+  function(u){ return pdEyeMask(u, 200, 208, 200, 150, '100% SILK'); });
+
+pdAdd('C18::图1', '主图 · 多色短袖 T 恤挂拍',
+  pdPal({ bg1:'#f7f8fb', bg2:'#dbe1ea', g1:'#ffffff', g2:'#fbfcfe', g3:'#e6ebf2', l1:'#3f82dd', l2:'#174e9e' }),
+  function(u){
+    let s = '<rect x="70" y="60" width="260" height="5" rx="2.5" fill="#c39b63"/>';
+    s += pdTeeC(140, 206, 116, 108, '#e9e2d4', '#c4bbaa', true);
+    s += pdTeeC(262, 208, 122, 116, '#33415c', '#26314a', true);
+    s += pdTeeC(200, 210, 132, 122, '#ffffff', '#c3ccd8', true);
+    return s;
+  },
+  { extra: '<rect x="0" y="0" width="400" height="48" fill="#111a24" opacity="0.84"/>'
+    + '<text x="200" y="22" text-anchor="middle" font-size="15" font-weight="800" fill="#ffffff" letter-spacing="0.5">800G｜100%纯棉</text>'
+    + '<text x="200" y="39" text-anchor="middle" font-size="10" fill="#cfe0f2" letter-spacing="4">三本针拼接</text>' });
+
+pdAdd('C29::主图1', '主图 · 纯白圆领短袖 T 恤平铺',
+  pdPal({ bg1:'#fafbfd', bg2:'#dfe5ee', g1:'#ffffff', g2:'#fbfcfe', g3:'#e6ebf2', l1:'#3f82dd', l2:'#174e9e' }),
+  function(u){ return pdTee(u, 200, 212, 196, 158, false); });
+
+pdAdd('C44::图1', '主图 · 100% 山羊绒加厚羊绒衫',
+  pdPal({ bg1:'#fbf7f0', bg2:'#e5d9c6', g1:'#dcc3a0', g2:'#f0e0c8', g3:'#c1a37c', l1:'#a8823f', l2:'#6f5227' }),
+  function(u){ return pdKnit(u, 200, 212, 196, 156); });
+
+/* —— 家纺 —— */
+pdAdd('C30::图2', '商品实拍图 · 灰色床上四件套',
+  pdPal({ bg1:'#f8f9fb', bg2:'#d9dee6', g1:'#d7dbe2', g2:'#eceff4', g3:'#c3c9d3', l1:'#8f98a6', l2:'#5f6875' }),
+  function(u){ return pdBedding(u, 200, 210, 216, 146); });
+
+pdAdd('C36::图1', '商品主图 · 100% 纯棉四件套（A 类）',
+  pdPal({ bg1:'#f8fbfe', bg2:'#dde6f1', g1:'#eef2f8', g2:'#ffffff', g3:'#dde5ef', l1:'#6aa0d8', l2:'#2f6fb0' }),
+  function(u){ return pdBedding(u, 200, 210, 216, 146); });
+
+/* —— 配饰 / 小电 / 五金 —— */
+pdAdd('C37::图1', '主图 · 头层牛皮男士皮带',
+  pdPal({ bg1:'#fbf6ef', bg2:'#e6dbc8', g1:'#8a5a2b', g2:'#b07a45', g3:'#6d4321', l1:'#c9a24a', l2:'#8f6d2a' }),
+  function(u){ return pdBelt(u, 200, 208, 210, 140); });
+
+pdAdd('C38::图1', '主图 · 多功能空气炸锅 5.5L 1500W',
+  pdPal({ bg1:'#f6f8fb', bg2:'#d7dde7', g1:'#3c4452', g2:'#6b7688', g3:'#262c36', l1:'#3f82dd', l2:'#174e9e' }),
+  function(u){ return pdFryer(u, 200, 210, 196, 150); });
+
+pdAdd('C45::图1', '主图 · 304 不锈钢厨房水龙头',
+  pdPal({ bg1:'#f7fafd', bg2:'#d5dee9', g1:'#aeb8c4', g2:'#eef2f6', g3:'#8d98a6', l1:'#3f82dd', l2:'#174e9e' }),
+  function(u){ return pdFaucet(u, 200, 210, 196, 156); });
+
+/* —— 数码 / 日用 / 母婴 / 运动 —— */
+pdAdd('C41::图1', '主图 · Type-C 快充数据线 1.5m 60W',
+  pdPal({ bg1:'#f9fbfd', bg2:'#dde4ee', g1:'#e8edf3', g2:'#fbfcfe', g3:'#d3dae4', l1:'#3f82dd', l2:'#174e9e' }),
+  function(u){ return pdCable(u, 200, 210, 200, 144); });
+
+pdAdd('C42::图1', '主图 · 洗衣凝珠 50 颗装（除菌率 99%）',
+  pdPal({ bg1:'#f7fbfe', bg2:'#d9e6f2', g1:'#dfeaf7', g2:'#f6faff', g3:'#c8daee', l1:'#2f6fb0', l2:'#12457f' }),
+  function(u){ return pdPods(u, 200, 210, 190, 152); });
+
+pdAdd('C40::图1', '主图 · 婴儿纸尿裤 L 码 3 片试用装',
+  pdPal({ bg1:'#f8fbff', bg2:'#dbe7f5', g1:'#dbe8f6', g2:'#f4f9ff', g3:'#c3d8ee', l1:'#4a90d9', l2:'#1f5fa8' }),
+  function(u){ return pdDiaper(u, 200, 210, 200, 150); });
+
+pdAdd('C43::图1', '主图 · 瑜伽垫 TPE 183×61cm 8mm',
+  pdPal({ bg1:'#f7f9fd', bg2:'#d8e0ec', g1:'#9db4d6', g2:'#cddcee', g3:'#7d97bd', l1:'#6b5bd2', l2:'#3f2fa0' }),
+  function(u){ return pdYogaMat(u, 200, 210, 200, 156); });
+
+pdAdd('C39::图1', '主图 · 每日坚果 750g 混合装礼盒',
+  pdPal({ bg1:'#fdf8f0', bg2:'#e8dac3', g1:'#e9d2b4', g2:'#f7e9d5', g3:'#d3b48c', l1:'#b23a3a', l2:'#7d2323' }),
+  function(u){ return pdGiftBox(u, 200, 210, 200, 148); });
+
+/* —— 弱证据 / 模糊凭证 —— */
+pdAdd('C26::主图1', '实拍主图 · 防脱洗发水（模糊）',
+  pdPal({ bg1:'#f6f8f7', bg2:'#d8e0da', g1:'#2f5548', g2:'#5a8574', g3:'#1e3a31', l1:'#2f6b57', l2:'#14352a' }),
+  function(u){ return pdShampoo(u, 200, 210, 190, 160); },
+  { blur: true,
+    extra: '<rect x="154" y="112" width="84" height="52" rx="4" fill="none" stroke="#e0a13a" stroke-width="1.8" stroke-dasharray="5 3"/>'
+      + '<text x="152" y="106" font-size="8" fill="#b0750e">OCR 疑似：「防脱生发」· 置信度 0.72</text>' });
+
+pdAdd('C27::附件', '买家前后对比照（C 级弱证据）',
+  pdPal({ bg1:'#f6f7f9', bg2:'#dfe3ea', g1:'#e9eef4', g2:'#fbfcfe', g3:'#d5dbe4', l1:'#3f82dd', l2:'#174e9e' }),
+  function(u){ return pdCompare(u, 200, 206, 216, 150); });
+
+pdAdd('C11::图1', '买家好评聊天截图 3 张（C 级弱证据）',
+  pdPal({ bg1:'#f4f6fa', bg2:'#e2e7ee', g1:'#e9eef4', g2:'#fbfcfe', g3:'#d5dbe4', l1:'#3f82dd', l2:'#174e9e' }),
+  function(u){ return pdChat(u, 200, 208, 200, 150); });
+
+const MAT_TPL = {report:matArtReport, cert:matArtCert, promo:matArtPromo, spec:matArtSpec, tag:matArtTag, pack:matArtPack, photo:matArtPhoto};
+/* 选版式：先认 type，再按描述里的材料形态兜底
+   （吊牌/报关单/成分表这些常挂在 detail_image 下，不看描述认不出来） */
+function matKind(im){
+  const t = (im && im.type) || '', d = (im && im.description) || '';
+  if (t === 'report') return 'report';
+  if (t === 'certificate') return 'cert';
+  if (t === 'promo_image') return 'promo';
+  if (/吊牌|洗唛|水洗标|领标|织标/.test(d)) return 'tag';
+  if (/包装|袋装|瓶身|外箱/.test(d)) return 'pack';
+  if (/报关单|授权书|资质证书|专利证书|证书/.test(d)) return 'cert';
+  if (/检测报告|检验报告/.test(d)) return 'report';
+  /* 带叠加文案的主图（价格/条件类断裂就出在这类图上）：先于「主图→占位」判，否则文案会被吃掉 */
+  if (/醒目|大字|小字|叠加文案|文案|标注|到手价|专享价/.test(d)) return 'promo';
+  if (/成分表|配料表|营养|参数|规格|明细|表格|标签|标识|铭牌|成分/.test(d)) return 'spec';
+  if (t === 'main_image' || t === 'product_image' || t === 'detail_image') return 'photo';
+  if (/实拍|商品图|买家|聊天|截图|模糊|OCR/.test(d)) return 'photo';
+  if (/宣传|海报|主视觉/.test(d)) return 'promo';
+  return 'spec';
+}
+function matArt(im){
+  const f = MAT_TPL[matKind(im)];
+  return f ? f(im || {}) : null;
+}
+function matApplyEdits(text, ed){
+  let out = String(text == null ? '' : text);
+  Object.keys(ed).forEach(function(from){ out = out.split(from).join(ed[from]); });
+  return out;
+}
+function imgArt(id, im){
+  const loc = (im && im.locator) || '';
+  /* 商家提交过的文字整改要能在这张图上看到。
+     模板图是按描述排版的，所以先把改动落到描述上；手绘图则直接换图里的字。 */
+  const ed = state.matText[id + '::' + loc];
+  let src = im;
+  if (ed && im){
+    src = {};
+    for (const k in im) if (Object.prototype.hasOwnProperty.call(im, k)) src[k] = im[k];
+    src.description = matApplyEdits(im.description, ed);
+  }
+  const svg = MATERIAL_ART[id + '::' + loc] || matArt(src);
+  if (!svg || !ed) return svg;
+  return matApplyEdits(svg, ed);
+}
+/* 把一条文字整改落到它所在的那张材料图上。
+   金标整改清单里的图号与材料顺序不总对得上（C31 把宣传图写成「图3」），
+   所以不认图号，认「哪张材料的描述里真的出现了这句话」。返回改到的图号。 */
+function applyTextFix(c, from, to){
+  if (!from) return '';
+  const list = imgsOf(c), hit = [];
+  for (let i = 0; i < list.length; i++){
+    const im = list[i];
+    if (String(im.description || '').indexOf(from) < 0) continue;
+    const loc = im.locator || ('图' + (i + 1));
+    const k = c.id + '::' + loc;
+    if (!state.matText[k]) state.matText[k] = {};
+    state.matText[k][esc(from)] = esc(to);
+    hit.push(loc);
+  }
+  return hit.join('、');
+}
+function imgTypeZh(im){
+  return IMG_TYPE_ZH[(im && im.type) || ''] || ((im && im.type) || '材料');
+}
+
+function renderImgs(c){
+  const box = document.getElementById('imgsBody');
+  if (!box) return;
+  const list = imgsOf(c);
+  const chip = document.getElementById('imgsChip');
+  if (chip) chip.textContent = list.length ? (list.length + ' 张材料') : '未上传';
+  if (!list.length){
+    box.innerHTML = '<div class="imgs-na">本条未提交图片材料——没有图片，就无法做图文互证核对。</div>';
+    return;
+  }
+  box.innerHTML = list.map(function(im, i){
+    const art = imgArt(c.id, im);
+    const loc = im.locator || ('图' + (i + 1));
+    /* 只标「图N」和材料类型：结论标签（如"不成立"）属于分析层，不能贴到商家原图上。
+       说明文字一律不进阵列——阵列只放图，文字在放大层里看 */
+    return '<figure class="img-th" data-i="' + i + '" tabindex="0" role="button"'
+      + ' aria-label="放大查看 ' + esc(loc) + '：' + esc(imgTypeZh(im)) + '">'
+      + '<div class="it-top"><span class="it-loc">' + esc(loc) + '</span>'
+      + '<span class="it-type">' + esc(imgTypeZh(im)) + '</span></div>'
+      + '<div class="it-frame">'
+      + (art || '<div class="it-noart">本条暂无预览图</div>')
+      + '</div>'
+      + '</figure>';
+  }).join('');
+  Array.prototype.forEach.call(box.querySelectorAll('.img-th'), function(el){
+    const open = function(){ openLightbox(parseInt(el.getAttribute('data-i'), 10)); };
+    el.addEventListener('click', open);
+    el.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); open(); }
+    });
+  });
+}
+
+/* 放大浮层：只读浏览，不碰任何裁决状态（不开面板、不改动作、不留痕） */
+let lbIdx = -1;
+function openLightbox(i){
+  const list = imgsOf(normalize(CASES[state.id]));
+  if (i < 0 || i >= list.length) return;
+  lbIdx = i;
+  paintLightbox();
+  document.getElementById('lb').classList.add('show');
+  document.getElementById('lbClose').focus();
+}
+function closeLightbox(){
+  const lb = document.getElementById('lb');
+  if (lb) lb.classList.remove('show');
+  lbIdx = -1;
+}
+function lbStep(d){
+  const list = imgsOf(normalize(CASES[state.id]));
+  const t = lbIdx + d;
+  if (t < 0 || t >= list.length) return;
+  lbIdx = t;
+  paintLightbox();
+}
+function paintLightbox(){
+  const c = normalize(CASES[state.id]);
+  const list = imgsOf(c), im = list[lbIdx] || {};
+  const loc = im.locator || ('图' + (lbIdx + 1));
+  /* 浮层抬头只显示「图N · 类型 + 商品标题」：内嵌数据里的用例 ID 与来源标注属内部标识，不向商家展示 */
+  document.getElementById('lbTitle').innerHTML =
+      '<b>' + esc(loc) + ' · ' + esc(imgTypeZh(im)) + '</b>'
+    + (c.input.title ? '<span class="lb-case">' + esc(c.input.title) + '</span>' : '');
+  document.getElementById('lbImg').innerHTML = imgArt(c.id, im) || '<div class="imgs-na">本条暂无预览图</div>';
+  document.getElementById('lbSide').innerHTML =
+    '<div class="lb-k">商家上传说明</div><div class="lb-d">' + esc(im.description || '—') + '</div>';
+  document.getElementById('lbIdx').textContent = (lbIdx + 1) + ' / ' + list.length;
+  document.getElementById('lbPrev').disabled = lbIdx <= 0;
+  document.getElementById('lbNext').disabled = lbIdx >= list.length - 1;
+}
+/* 放大浮层：关闭 / 上一张 / 下一张 / 键盘（←→ 翻张、Esc 关闭） */
+document.getElementById('lbClose').addEventListener('click', closeLightbox);
+document.getElementById('lbPrev').addEventListener('click', function(){ lbStep(-1); });
+document.getElementById('lbNext').addEventListener('click', function(){ lbStep(1); });
+document.getElementById('lb').addEventListener('click', function(e){
+  if (e.target === this) closeLightbox();
+});
+document.addEventListener('keydown', function(e){
+  const lbEl = document.getElementById('lb');
+  if (!lbEl || !lbEl.classList.contains('show')) return;
+  if (e.key === 'Escape'){ e.preventDefault(); closeLightbox(); }
+  else if (e.key === 'ArrowLeft'){ e.preventDefault(); lbStep(-1); }
+  else if (e.key === 'ArrowRight'){ e.preventDefault(); lbStep(1); }
+});
+
+/* ================= 总渲染 ================= */
+function render(){
+  const c = currentCase();
+  renderShellMeta(); renderPageHead(c); renderSteps(c);
+
+  document.getElementById('colMain').innerHTML =
+    renderOriginal(c) + renderReject(c) + renderWhy(c) + renderRules(c);
+  bindOrigImgs();
+
+  renderRail(c);
+  renderFoot();
+  renderActions(c);
+}
+
+/* ================= 事件（委托绑定，重渲染后仍生效） ================= */
+document.addEventListener('click', function(e){
+  /* 顶栏右侧店铺 = 商家角色切换入口 */
+  if (e.target.closest('#shopChip')){
+    state.shopOpen = !state.shopOpen;
+    renderShellMeta();
+    return;
+  }
+  if (!e.target.closest('#shopList') && state.shopOpen){
+    state.shopOpen = false;
+    renderShellMeta();
+  }
+
+  const caseEl = e.target.closest('[data-case]');
+  if (caseEl){ resetState(caseEl.getAttribute('data-case')); render(); return; }
+
+  /* 操作按钮要先于待办勾选判断：上传按钮本身就在待办条目内部 */
+  const act = e.target.closest('[data-act]');
+  if (act){
+    const a = act.getAttribute('data-act');
+    if (a === 'up'){ state.pendingKey = act.getAttribute('data-key') || ''; document.getElementById('fileInput').click(); }
+    else if (a === 'fixsubmit'){
+      /* 文字整改：提交后这条算处理完，并把改动同步到上方那份材料图上 */
+      const key = act.getAttribute('data-key');
+      const box = document.querySelector('.fix-input[data-key="'+key+'"]');
+      const orig = box ? (box.getAttribute('data-orig') || '') : '';
+      const val = box ? String(box.value || '').trim() : '';
+      state.edits[key] = val;
+      state.checked[key] = true;
+      if (!val || val === orig){
+        state.sent[key] = '内容未改动（已确认）';
+      } else {
+        const hit = applyTextFix(currentCase(), orig, val);
+        state.sent[key] = (orig ? '「'+orig+'」→「'+val+'」' : '「'+val+'」') + (hit ? '（已更新 '+hit+'）' : '');
+      }
+      render();
+    }
+    else if (a === 'submit'){ state.submitted = true; renderProgress(); }
+    else if (a === 'draft'){
+      const t = act.textContent;
+      act.textContent = '已暂存';
+      setTimeout(function(){ act.textContent = t; }, 1400);
+    } else if (a === 'appeal'){
+      const box = document.getElementById('appealBox') || document.getElementById('ruleCard');
+      if (box) box.scrollIntoView({behavior:'smooth', block:'center'});
+    }
+    return;
+  }
+
+  /* 在输入框里点选、编辑属于「改内容」，不应触发整条勾选 */
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+
+  const todo = e.target.closest('.todo');
+  if (todo){
+    const key = todo.getAttribute('data-key');
+    state.checked[key] = !state.checked[key];
+    todo.classList.toggle('done', !!state.checked[key]);
+    renderProgress();
+    return;
+  }
+
+  if (e.target.closest('#ruleLink')){
+    const rc = document.getElementById('ruleCard');
+    if (rc) rc.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+});
+
+document.getElementById('fileInput').addEventListener('change', function(e){
+  const key = state.pendingKey;
+  const picked = Array.prototype.slice.call(e.target.files).map(function(f){ return {name:f.name, key:key}; });
+  /* 每次上传都归属到某一条待办，只替换该条已选的文件 */
+  state.files = state.files.filter(function(f){ return f.key !== key; }).concat(picked);
+  /* 换了图就等于把这条改完了，同样不用回去打勾 */
+  if (key.indexOf('fix') === 0) state.checked[key] = true;
+  state.pendingKey = '';
+  e.target.value = '';
+  render();
+});
+
+resetState('C31');
+render();
+</script>
+<!-- 云服务桥接：打开本页即写一条访问记录（失败静默，断网/被拦不影响原型） -->
+<script src="./static/cloud-bridge.js"></script>
+</body>
+</html>
