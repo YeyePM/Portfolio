@@ -444,6 +444,21 @@
   .imgs-na{font-size:12px;color:var(--text-4);background:var(--surface-2);border:1px dashed var(--border-2);
     border-radius:var(--r-sm);padding:14px 16px;line-height:1.7;}
 
+  /* 提交反馈 toast：与审核端同一套反馈语言（顶栏下方居中、深色）。
+     这里多一行括号引导，所以用圆角气泡而不是 999px 胶囊 —— 胶囊装两行会变形。 */
+  .toast{
+    position:fixed;left:50%;top:70px;z-index:70;transform:translateX(-50%) translateY(-12px);
+    background:var(--text);color:#fff;font-size:12.5px;font-weight:600;line-height:1.5;
+    padding:11px 18px;border-radius:14px;text-align:left;
+    box-shadow:0 10px 28px rgba(20,22,28,.3);opacity:0;pointer-events:none;
+    transition:opacity .18s ease,transform .18s ease;
+    /* width:max-content 必须留着：left:50% 的定位元素默认按「到右边缘的剩余宽度」收缩，
+       手机上只剩 195px，文案会被折成四行。先按内容撑开，再用 max-width 兜住。 */
+    width:max-content;max-width:min(560px,92vw);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast-sub{display:block;font-size:11.5px;font-weight:500;opacity:.85;margin-top:3px;}
+
   /* 放大浮层 */
   .lb{position:fixed;inset:0;z-index:300;display:none;background:rgba(10,14,24,.74);padding:30px 24px;}
   .lb.show{display:flex;align-items:center;justify-content:center;}
@@ -598,6 +613,9 @@
     </div>
   </div>
 </div>
+
+<!-- 提交反馈 toast：与审核端同一套反馈语言，同样必须放在 <script> 之前 -->
+<div class="toast" id="toast" hidden></div>
 
 <script>
 /* ============ 内嵌数据（由 eval/cases_json/*.json 注入，勿手改） ============ */
@@ -1569,9 +1587,16 @@ function deriveSteps(c){
     steps.push({idx:'4', name:'机器审核', st:'done', note:'无需审核介入'});
     steps.push({idx:'5', name:'复判结果', st:'done', note:'已放行'});
   } else if (td.total > 0){
-    steps.push({idx:'3', name:'处理问题', st:'now', note:'待处理 '+td.total+' 项', ts:DEMO_TS.manual});
-    steps.push({idx:'4', name:'机器审核', st:'', note:'待机器审核'});
-    steps.push({idx:'5', name:'复判结果', st:'', note:'等待复判'});
+    if (state.submitted){
+      /* 已提交：步骤条必须跟着走。否则页面一边说「已提交」，一边还停在「待处理 N 项」 */
+      steps.push({idx:'3', name:'处理问题', st:'done', note:'整改与补证已提交'});
+      steps.push({idx:'4', name:'机器审核', st:'now', note:'复判中'});
+      steps.push({idx:'5', name:'复判结果', st:'', note:'等待复判结果'});
+    } else {
+      steps.push({idx:'3', name:'处理问题', st:'now', note:'待处理 '+td.total+' 项', ts:DEMO_TS.manual});
+      steps.push({idx:'4', name:'机器审核', st:'', note:'待机器审核'});
+      steps.push({idx:'5', name:'复判结果', st:'', note:'等待复判'});
+    }
   } else {
     steps.push({idx:'3', name:'处理问题', st:'done', note:'无需处理'});
     steps.push({idx:'4', name:'机器审核', st:'', note:'等待机器审核'});
@@ -1588,6 +1613,8 @@ function currentCase(){ return normalize(CASES[state.id]); }
 function resetState(id){
   state.id = id; state.checked = {}; state.edits = {}; state.sent = {}; state.matText = {}; state.files = []; state.submitted = false; state.shopOpen = false; state.pendingKey = '';
   const sel = document.getElementById('fileInput'); if (sel) sel.value = '';
+  /* 换了商品就收起上一条的提交提示，否则新商品头上还挂着上一条的「已提交」 */
+  hideToast();
 }
 
 /* 顶栏右侧：商家角色切换 + 补证中心待处理角标 */
@@ -1602,7 +1629,7 @@ function renderShellMeta(){
 
   const list = document.getElementById('shopList');
   list.className = 'shop-pop' + (state.shopOpen ? '' : ' hide');
-  list.innerHTML = '<div class="sp-head">切换商家</div>' + CASE_ORDER.map(function(id){
+  list.innerHTML = '<div class="sp-head">切换商家店铺</div>' + CASE_ORDER.map(function(id){
     const cc = normalize(CASES[id]);
     const mm = M_STATUS[cc.output.conclusion] || M_STATUS.RECHECK;
     return '<div class="sp-item'+(id===state.id?' on':'')+'" data-case="'+esc(id)+'">'
@@ -1903,7 +1930,8 @@ function renderProgress(){
     railFill.style.width = pct + '%';
     document.getElementById('railDone').innerHTML = done + '<small>/'+total+'</small>';
     document.getElementById('railNote').textContent =
-      done === 0 ? '尚未开始处理' : (done >= total ? '已全部处理，可提交' : '已处理 ' + done + ' 项');
+      state.submitted ? '已提交，等待复判'
+      : (done === 0 ? '尚未开始处理' : (done >= total ? '已全部处理，可提交' : '已处理 ' + done + ' 项'));
   }
 
   const btn = document.getElementById('submitBtn');
@@ -2054,6 +2082,26 @@ function renderActions(c){
   }
   document.getElementById('actActions').innerHTML = btns;
   renderProgress();
+}
+
+/* ================= 提交反馈 toast ================= */
+/* 主句给结果，第二行给「还能玩什么」。右上角那个入口在顶栏，toast 也在顶部，
+   提示与被提示的东西落在同一视线区域，访客不用回头找。 */
+let toastTimer;
+function showToast(main, sub){
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.innerHTML = esc(main) + (sub ? '<span class="toast-sub">'+esc(sub)+'</span>' : '');
+  el.hidden = false;
+  requestAnimationFrame(function(){ el.classList.add('show'); });
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 4200);
+}
+function hideToast(){
+  const el = document.getElementById('toast');
+  if (!el) return;
+  clearTimeout(toastTimer);
+  el.classList.remove('show');
 }
 
 /* ================= 商家上传材料（缩略图 + 点开看大图） ================= */
@@ -3317,7 +3365,14 @@ document.addEventListener('click', function(e){
       }
       render();
     }
-    else if (a === 'submit'){ state.submitted = true; renderProgress(); }
+    else if (a === 'submit'){
+      state.submitted = true;
+      /* 整页重渲染：步骤条与右栏进度卡都得跟着「已提交」走，不能只改底部那句提示 */
+      render();
+      /* 主句与底部提示条同一口径；括号那句照右上角那个入口的名字写，访客才找得到 */
+      showToast('整改与补证已提交，等待平台复判。',
+                '右上角「切换商家店铺」可换一个商品，体验另一种情况。');
+    }
     else if (a === 'draft'){
       const t = act.textContent;
       act.textContent = '已暂存';
